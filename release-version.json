@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "0.1.0",
+  "displayVersion": "0.1",
+  "desktop": {
+    "version": "0.1.0"
+  },
+  "android": {
+    "versionName": "0.1.0",
+    "versionCode": 1
+  }
+}

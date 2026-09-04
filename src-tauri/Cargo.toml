@@ -1,0 +1,23 @@
+[package]
+name = "zhiwellcare-app"
+version = "0.1.0"
+description = "ZhiWellCare consumer smart-training desktop shell (Tauri 2)"
+authors = ["ZhiWellCare"]
+edition = "2021"
+
+[lib]
+name = "zhiwellcare_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+btleplug = "0.12"
+futures = "0.3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+uuid = "1"

@@ -1,0 +1,5 @@
+.env
+zhiwellcare-server.exe
+.git
+*.md
+internal/**/*_test.go

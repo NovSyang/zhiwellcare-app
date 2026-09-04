@@ -1,0 +1,66 @@
+# Node.js 依赖、前端构建结果和测试缓存均可由源码重新生成。
+node_modules/
+dist/
+.vite/
+coverage/
+*.tsbuildinfo
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 本地环境变量可能包含密钥，仅保留可公开的示例配置。
+.env
+.env.*
+!.env.example
+
+# 编辑器配置和操作系统生成的临时文件不属于项目源码。
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Tauri/Rust 的编译目录和本地安装工具不提交到仓库。
+src-tauri/target/
+src-tauri/gen/
+rustup-init.exe
+
+# Android 工程只提交源码、Gradle Wrapper 和可复现的工程配置。
+android/.gradle/
+android/.idea/
+android/.cxx/
+android/.externalNativeBuild/
+android/build/
+android/app/build/
+android/captures/
+android/local.properties
+android/signing.properties
+keystore.properties
+*.apk
+*.aab
+*.apks
+
+# 签名材料和在线更新私钥不得进入版本库；公钥 .key.pub 可以公开。
+*.jks
+*.keystore
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Python 辅助脚本的解释器缓存可随时重新生成。
+__pycache__/
+*.py[cod]
+
+# Go 后端的本地二进制、测试产物和覆盖率报告不提交。
+backend/zhiwellcare-server
+backend/zhiwellcare-server.exe
+backend/*.test
+backend/coverage.out
+
+# 发布目录包含打包产物，不纳入源码版本控制。
+release-output/

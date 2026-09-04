@@ -1,0 +1,5 @@
+/* 管理后台少量全局补充样式（主题走 Element Plus 主色 #0436A7）。 */
+.page-card { margin-bottom: 16px; }
+.table-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+.pager { margin-top: 14px; display: flex; justify-content: flex-end; }
+.form-tip { color: #8593a8; font-size: 12px; line-height: 1.7; margin-top: 4px; }

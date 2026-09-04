@@ -1,0 +1,52 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ZhiWellCare",
+  "mainBinaryName": "ZhiWellCare",
+  "version": "0.1.0",
+  "identifier": "com.zhiwellcare.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "智为康乐 · 智能训练",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1100,
+        "minHeight": 720
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFDNEMwQzkwQzUzQkQzMDgKUldRSTB6dkZrQXhNckJ1bEZvRWlMRlF0K0hrZDl6V3BPdkNadWpOZ2tlYmZKNkdEQjk0cXFsd3MK",
+      "endpoints": [
+        "https://github.com/NovSyang/ZhiWellCare/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
