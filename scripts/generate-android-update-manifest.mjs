@@ -25,7 +25,7 @@ const manifest = {
   publishedAt,
   notes,
   apk: {
-    url: `https://github.com/NovSyang/ZhiWellCare/releases/download/v${release.productVersion}/${encodeURIComponent(apkName)}`,
+    url: `https://github.com/NovSyang/zhiwellcare-app/releases/download/v${release.productVersion}/${encodeURIComponent(apkName)}`,
     sha256,
     size: apkStat.size,
   },

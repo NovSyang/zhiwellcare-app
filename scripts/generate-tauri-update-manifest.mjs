@@ -6,7 +6,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 发布清单只引用公开资产，签名私钥始终由 Tauri 构建阶段在仓库外使用。
 const options = parseArgs(process.argv.slice(2))
 const release = JSON.parse(await readFile(resolve(root, 'release-version.json'), 'utf8'))
-const artifactInput = options.artifact ?? `src-tauri/target/release/bundle/nsis/ZhiWellCare_${release.productVersion}_x64-setup.nsis.zip`
+// Tauri 2 的 createUpdaterArtifacts=true 会直接为 NSIS 安装程序生成同名 .sig 文件。
+const artifactInput = options.artifact ?? `src-tauri/target/release/bundle/nsis/ZhiWellCare_${release.productVersion}_x64-setup.exe`
 const artifactPath = resolve(root, artifactInput)
 const signaturePath = resolve(root, options.signature ?? `${artifactInput}.sig`)
 const artifactStat = await stat(artifactPath)
@@ -25,7 +26,7 @@ const manifest = {
   platforms: {
     'windows-x86_64': {
       signature,
-      url: `https://github.com/NovSyang/ZhiWellCare/releases/download/v${release.productVersion}/${encodeURIComponent(artifactName)}`,
+      url: `https://github.com/NovSyang/zhiwellcare-app/releases/download/v${release.productVersion}/${encodeURIComponent(artifactName)}`,
     },
   },
 }

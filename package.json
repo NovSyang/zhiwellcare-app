@@ -28,7 +28,7 @@
     "@capacitor/core": "^8.5.0",
     "@capacitor/screen-orientation": "^8.0.1",
     "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/plugin-updater": "^2.10.1",
+    "@tauri-apps/plugin-updater": "2.11.0",
     "pinia": "^3.0.0",
     "pixi.js": "^8.0.0",
     "vue": "^3.5.0",
