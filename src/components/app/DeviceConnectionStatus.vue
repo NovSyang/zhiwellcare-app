@@ -41,4 +41,51 @@ async function forget(): Promise<void> {
 }
 </script>
 
-<template><div ref="root" class="device-status-menu"><button class="device-status" :data-connected="connected" @click="open = !open"><span class="status-dot"></span><span>{{ connected ? '设备已连接' : '设备未连接' }}</span><span v-if="connected" class="battery-status" :data-low="batteryLow" :aria-label="batteryAriaLabel"><span class="battery-icon" :style="{ '--battery-fill-width': `${batteryFillPercent}%` }" aria-hidden="true"><span class="battery-icon-level"><i></i></span></span><span aria-hidden="true">{{ batteryText }}</span></span><span aria-hidden="true">▾</span></button><div v-if="open" class="device-status-dropdown"><button class="dropdown-item" :disabled="!connection.binding" @click="reconnect">重新连接</button><button class="dropdown-item" @click="switchDevice">更换设备</button><button class="dropdown-item danger-text" :disabled="!connection.binding" @click="forget">忘记设备</button></div><p v-if="errorMessage" class="device-status-error">{{ errorMessage }}</p><DeviceSwitchDialog v-if="showSwitchDialog" @close="showSwitchDialog = false" @connected="showSwitchDialog = false" /></div></template>
+<template>
+  <!-- 外层只承接全局或页面级布局，内层菜单提供下拉框的定位锚点。 -->
+  <div ref="root" class="device-status-root">
+    <div class="device-status-menu">
+      <button
+        class="device-status"
+        :data-connected="connected"
+        :aria-expanded="open"
+        aria-haspopup="menu"
+        @click="open = !open"
+      >
+        <span class="status-dot"></span>
+        <span>{{ connected ? '设备已连接' : '设备未连接' }}</span>
+        <span
+          v-if="connected"
+          class="battery-status"
+          :data-low="batteryLow"
+          :aria-label="batteryAriaLabel"
+        >
+          <span class="battery-icon" :style="{ '--battery-fill-width': `${batteryFillPercent}%` }" aria-hidden="true">
+            <span class="battery-icon-level"><i></i></span>
+          </span>
+          <span aria-hidden="true">{{ batteryText }}</span>
+        </span>
+        <span
+          class="device-status-chevron"
+          :class="{ 'is-open': open }"
+          aria-hidden="true"
+        >▲</span>
+      </button>
+
+      <div v-if="open" class="device-status-dropdown" role="menu">
+        <button class="dropdown-item" role="menuitem" :disabled="!connection.binding" @click="reconnect">重新连接</button>
+        <button class="dropdown-item" role="menuitem" @click="switchDevice">更换设备</button>
+        <button class="dropdown-item danger-text" role="menuitem" :disabled="!connection.binding" @click="forget">忘记设备</button>
+      </div>
+
+      <!-- 错误提示保留在相对定位容器内，兼容训练工具栏中的内嵌实例。 -->
+      <p v-if="errorMessage" class="device-status-error">{{ errorMessage }}</p>
+    </div>
+
+    <DeviceSwitchDialog
+      v-if="showSwitchDialog"
+      @close="showSwitchDialog = false"
+      @connected="showSwitchDialog = false"
+    />
+  </div>
+</template>

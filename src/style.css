@@ -203,8 +203,10 @@ p { margin: 0 0 .8em; }
   position: fixed; z-index: 60;
   top: calc(var(--app-safe-top) + 8px);
   right: calc(var(--app-safe-right) + 10px);
+  width: max-content;
   max-width: calc(100vw - var(--app-safe-left) - var(--app-safe-right) - 20px);
 }
+.device-status-root { width: max-content; max-width: 100%; }
 .device-status {
   display: flex; align-items: center; gap: 7px; border: 1px solid var(--c-line);
   padding: 7px 12px; border-radius: 999px; background: rgba(255,255,255,.92);
@@ -215,12 +217,17 @@ p { margin: 0 0 .8em; }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
 .device-status[data-connected="true"] { color: var(--c-accent); }
 .device-status[data-state="error"], .device-status[data-state="disconnected"] { color: var(--c-danger); }
-.device-status-menu { position: relative; }
+.device-status-menu { position: relative; width: max-content; max-width: 100%; }
 .device-status-dropdown {
-  position: absolute; z-index: 30; top: calc(100% + 8px); right: 0;
+  position: absolute; z-index: 30; top: calc(100% + 8px); right: 0; left: auto;
   display: grid; width: 168px; padding: 6px; border: 1px solid var(--c-line);
   border-radius: 12px; background: #fff; box-shadow: var(--shadow);
 }
+.device-status-chevron {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  transition: transform .18s ease;
+}
+.device-status-chevron.is-open { transform: rotate(180deg); }
 .dropdown-item {
   border: 0; border-radius: 8px; padding: 9px 10px; background: transparent;
   color: var(--c-ink); text-align: left; cursor: pointer; font-size: 13px;
