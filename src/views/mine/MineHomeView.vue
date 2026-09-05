@@ -123,7 +123,7 @@ function formatError(error: unknown): string { return error instanceof Error ? e
 
       <nav class="card list-card" aria-label="我的功能入口">
         <button class="list-row" type="button" @click="open('/mine/history')"><span class="row-ic" aria-hidden="true">📈</span><span class="row-main">训练数据历史<small>按游戏查看记录、详细结果与轨迹回放</small></span><span class="row-arrow" aria-hidden="true">›</span></button>
-        <button class="list-row" type="button" @click="open('/devices')"><span class="row-ic" aria-hidden="true">⌚</span><span class="row-main">我的设备<small>连接管理 · 中心校准 · 活动范围设定</small></span><span class="row-arrow" aria-hidden="true">›</span></button>
+        <button class="list-row" type="button" @click="open('/devices')"><span class="row-ic" aria-hidden="true">⌚</span><span class="row-main">我的设备<small>连接管理 · 自然中心确认 · 个人活动范围</small></span><span class="row-arrow" aria-hidden="true">›</span></button>
         <button class="list-row" type="button" @click="open('/mine/orders')"><span class="row-ic" aria-hidden="true">🧾</span><span class="row-main">我的订单<small>实物 + 服务统一聚合</small></span><span class="row-arrow" aria-hidden="true">›</span></button>
         <button class="list-row" type="button" @click="open('/courses')"><span class="row-ic" aria-hidden="true">📚</span><span class="row-main">课程打卡<small>训练课程与打卡记录</small></span><span class="row-arrow" aria-hidden="true">›</span></button>
         <button class="list-row" type="button" @click="open('/mine/settings')"><span class="row-ic" aria-hidden="true">⚙️</span><span class="row-main">更新设置<small>当前版本 · 更新方式</small></span><span class="row-arrow" aria-hidden="true">›</span></button>

@@ -9,7 +9,8 @@ import type { MotionRange } from '../core/motion/MotionConfig'
 
 const router = useRouter()
 const route = useRoute()
-const phase = ref<'center' | 'rom'>('center')
+const phase = ref<'center' | 'range'>('center')
+const rangeFlowStarted = ref(false)
 const errorMessage = ref('')
 const source = computed(() => route.query.source === 'settings' ? 'settings' : 'setup')
 let releaseUpdateLock: (() => void) | null = null
@@ -22,12 +23,17 @@ const returnTarget = computed<string | null>(() => {
 })
 const exitTarget = computed(() => returnTarget.value ?? (source.value === 'settings' ? '/mine/settings' : '/games'))
 
-// 整个挥腕范围设定流程禁止启动安装器，避免中心或样本采集被系统页面中断。
+// 整个个人活动范围流程禁止启动安装器，避免中心确认或样本采集被系统页面中断。
 onMounted(() => { releaseUpdateLock = updateInstallGuard.acquire('rom-calibration') })
 onBeforeUnmount(() => releaseUpdateLock?.())
 
 // 从设置重新设定时，旧 Profile 一直保留到四方向全部完成并保存。
-function centerCompleted(): void { phase.value = 'rom' }
+function centerCompleted(): void {
+  rangeFlowStarted.value = true
+  phase.value = 'range'
+}
+// 断线恢复后仅临时切回中心确认，已接受的方向结果由仍挂载的面板保留。
+function centerRequired(): void { phase.value = 'center' }
 async function completed(range: MotionRange): Promise<void> {
   try { await motionProfileService.save(profileFromMeasuredRange(range, motionProfileService.getCurrent())); await router.replace(exitTarget.value) }
   catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) }
@@ -35,4 +41,18 @@ async function completed(range: MotionRange): Promise<void> {
 function cancel(): void { void router.replace(exitTarget.value) }
 </script>
 
-<template><main class="content-page"><p class="eyebrow">挥腕范围设定</p><h1>{{ phase === 'center' ? '归零校准' : '挥腕范围设定' }}</h1><CenterCalibrationGuide v-if="phase === 'center'" @completed="centerCompleted" /><RomCalibrationPanel v-else @completed="completed" @cancelled="cancel" /><p v-if="errorMessage" class="error">{{ errorMessage }}</p></main></template>
+<template>
+  <main class="content-page">
+    <p class="eyebrow">个人活动范围</p>
+    <h1>{{ phase === 'center' ? '确认自然中心位置' : '个人活动范围测量' }}</h1>
+    <CenterCalibrationGuide v-if="phase === 'center'" @completed="centerCompleted" />
+    <RomCalibrationPanel
+      v-if="rangeFlowStarted"
+      v-show="phase === 'range'"
+      @completed="completed"
+      @cancelled="cancel"
+      @center-required="centerRequired"
+    />
+    <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
+  </main>
+</template>

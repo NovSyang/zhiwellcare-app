@@ -133,14 +133,14 @@ async function runRefresh(): Promise<void> {
   }
 }
 
-/** 开始训练：范围未设定先进入挥腕范围设定（完成后自动回到本训练）；未连接则引导去设备页。 */
+/** 开始训练：范围未设定先进入个人活动范围测量；未连接则引导去设备页。 */
 function startTraining(gameId: string): void {
   if (motionProfileService.getCurrent().measuredRange === null) {
     void router.push(`/calibration?return=${encodeURIComponent(`/training/${gameId}`)}`)
     return
   }
   if (!connected.value) {
-    loadError.value = '请先连接并完成归零校准。'
+    loadError.value = '请先连接训练设备。'
     void router.push('/devices')
     return
   }
@@ -197,7 +197,7 @@ function coverGlyph(name: string): string {
       <div class="hero-tags">
         <span class="hero-tag" :title="catalogSourceStatus.message">{{ sourceKindLabel }}</span>
         <span v-if="connected && activeModel" class="hero-tag">设备：{{ activeModel.name }}</span>
-        <span v-if="connected && !rangeReady" class="hero-tag">未完成挥腕范围设定</span>
+        <span v-if="connected && !rangeReady" class="hero-tag">未完成个人活动范围测量</span>
       </div>
     </header>
 
@@ -233,10 +233,10 @@ function coverGlyph(name: string): string {
         <footer class="game-state">
           <div class="game-state-note">
             <p v-if="card.state === 'ready' && card.driver" class="muted small">由「{{ card.driver }}」驱动</p>
-            <p v-if="card.state === 'ready' && !rangeReady" class="game-lock-hint">首次开始前需先完成挥腕范围设定</p>
+            <p v-if="card.state === 'ready' && !rangeReady" class="game-lock-hint">首次开始前需先完成个人活动范围测量</p>
             <p v-else-if="card.state !== 'ready'" class="game-lock-hint">{{ cardHint(card) }}</p>
           </div>
-          <button class="button" :class="card.state === 'ready' ? 'primary' : 'ghost'" :title="card.state === 'ready' && !rangeReady ? '尚未完成挥腕范围设定，点击后将先进入设定流程' : undefined" @click="onAction(card)">{{ actionLabel(card) }}</button>
+          <button class="button" :class="card.state === 'ready' ? 'primary' : 'ghost'" :title="card.state === 'ready' && !rangeReady ? '尚未完成个人活动范围测量，点击后将先进入测量流程' : undefined" @click="onAction(card)">{{ actionLabel(card) }}</button>
         </footer>
       </article>
     </div>

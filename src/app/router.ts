@@ -41,7 +41,7 @@ export const router = createRouter({
     { path: '/mine/history', component: HistoryView },                             // 训练数据 / 历史
     { path: '/mine/settings', component: SettingsView },                           // 设置（含更新）
     { path: '/mine/settings/debug', component: DeveloperDebugView },               // 调试（开发用）
-    { path: '/calibration', component: RomCalibrationView },                       // 挥腕范围/归零设定
+    { path: '/calibration', component: RomCalibrationView },                       // 个人活动范围与自然中心确认
     // ── 沉浸页（隐藏底部导航） ─────────────────────
     { path: '/training/:gameId', component: TrainingView, meta: { hideChrome: true, trainingLayout: true } },
     { path: '/result', component: ResultView, meta: { hideChrome: true } },
