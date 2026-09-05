@@ -13,6 +13,10 @@ const config: CapacitorConfig = {
       // 由应用统一处理训练确认、路由返回和根页面最小化。
       disableBackButtonHandler: true,
     },
+    SystemBars: {
+      // Capacitor 8 注入可靠的 CSS 安全区变量，旧版 Android WebView 也能正确避让系统栏。
+      insetsHandling: 'css',
+    },
   },
 }
 

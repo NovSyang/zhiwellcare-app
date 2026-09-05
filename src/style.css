@@ -43,7 +43,15 @@
   --canvas-bg: #0a1733;
   --canvas-border: #1d3a66;
 
-  --tabbar-h: 62px;
+  /* Capacitor 8 注入值优先，标准 env() 兼容其他浏览器与桌面 WebView。 */
+  --app-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --app-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  --app-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --app-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --tabbar-content-h: 62px;
+  --tabbar-total-h: calc(var(--tabbar-content-h) + var(--app-safe-bottom));
+  /* 旧布局仍引用内容高度，保留别名避免影响沉浸训练的桌面样式。 */
+  --tabbar-h: var(--tabbar-content-h);
   font-family: var(--font);
   color: var(--c-ink);
   background: var(--c-bg-2);
@@ -53,30 +61,58 @@
 }
 
 * { box-sizing: border-box; }
-html, body, #app { width: 100%; min-height: 100%; }
+html, body, #app {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
-  min-height: 100dvh;
-  overflow-x: hidden;
+  overscroll-behavior: none;
   background: var(--c-bg-2);
   color: var(--c-ink);
   line-height: 1.6;
 }
+img, canvas, video { max-width: 100%; }
 button, select, input { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; }
 h1, h2, h3 { line-height: 1.3; margin: 0 0 .3em; }
 p { margin: 0 0 .8em; }
 
+/* ---------- App Shell：根文档固定，仅路由内容区纵向滚动 ---------- */
+.app-shell {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--c-bg-2);
+}
+.app-scroll {
+  position: absolute;
+  inset: 0;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+/* Android 横屏训练保持单屏画布，不继承普通页面滚动。 */
+.app-shell--native-training .app-scroll { overflow: hidden; }
+/* 隐藏底栏的训练、结果与登录页占满 Shell，不再扣除旧底栏高度。 */
+.app-shell--immersive :is(.training-shell, .result-shell, .auth-page) { min-height: 100%; }
+
 /* ---------- 页面通用骨架（适配底部 Tab） ---------- */
 .content-page {
-  min-height: calc(100vh - var(--tabbar-h));
-  min-height: calc(100dvh - var(--tabbar-h));
-  padding: 22px max(20px, calc((100vw - 1080px) / 2))
-    calc(max(26px, env(safe-area-inset-bottom)) + var(--tabbar-h))
-    max(20px, env(safe-area-inset-left));
+  min-height: 100%;
+  padding: 22px max(20px, calc((100vw - 1080px) / 2), var(--app-safe-right))
+    calc(var(--tabbar-total-h) + 24px)
+    max(20px, calc((100vw - 1080px) / 2), var(--app-safe-left));
   background:
     radial-gradient(circle at 88% -6%, rgba(13, 213, 193, .10) 0, transparent 34%),
     radial-gradient(circle at 12% 0%, rgba(4, 54, 167, .08) 0, transparent 30%),
@@ -163,7 +199,12 @@ p { margin: 0 0 .8em; }
 .tag-chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
 
 /* ---------- 设备状态（右上角全局连接胶囊） ---------- */
-.global-connection { position: fixed; z-index: 60; top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); }
+.global-connection {
+  position: fixed; z-index: 60;
+  top: calc(var(--app-safe-top) + 8px);
+  right: calc(var(--app-safe-right) + 10px);
+  max-width: calc(100vw - var(--app-safe-left) - var(--app-safe-right) - 20px);
+}
 .device-status {
   display: flex; align-items: center; gap: 7px; border: 1px solid var(--c-line);
   padding: 7px 12px; border-radius: 999px; background: rgba(255,255,255,.92);
@@ -196,8 +237,8 @@ p { margin: 0 0 .8em; }
 .battery-status[data-low="true"] .battery-icon::after, .battery-status[data-low="true"] .battery-icon-level i { background: var(--c-danger); }
 .device-status-error { position: absolute; right: 0; width: 280px; margin: 8px 0 0; color: var(--c-danger); font-size: 12px; }
 .device-connection-loading {
-  position: fixed; z-index: 55; right: max(16px, env(safe-area-inset-right)); bottom: calc(var(--tabbar-h) + max(14px, env(safe-area-inset-bottom)));
-  display: flex; align-items: center; gap: 12px; width: min(350px, calc(100vw - 32px));
+  position: fixed; z-index: 55; right: calc(var(--app-safe-right) + 16px); bottom: calc(var(--tabbar-total-h) + 14px);
+  display: flex; align-items: center; gap: 12px; width: min(350px, calc(100vw - var(--app-safe-left) - var(--app-safe-right) - 32px));
   padding: 14px 16px; border: 1px solid var(--c-line); border-radius: 14px;
   background: rgba(255,255,255,.97); box-shadow: var(--shadow); color: var(--c-ink);
 }
@@ -364,7 +405,7 @@ p { margin: 0 0 .8em; }
 .training-shell { position: relative; }
 .scoreboard { display: flex; gap: 14px; color: #d9ecff; font-weight: 700; font-size: 14px; }
 .training-display-hint {
-  position: absolute; z-index: 5; right: 20px; bottom: max(14px, env(safe-area-inset-bottom));
+  position: absolute; z-index: 5; right: 20px; bottom: max(14px, var(--app-safe-bottom));
   margin: 0; padding: 8px 12px; border: 1px solid rgba(255,255,255,.22); border-radius: 9px;
   background: rgba(2, 12, 36, .78); color: #ffe3a8; font-size: 12px;
 }
@@ -417,14 +458,15 @@ p { margin: 0 0 .8em; }
 .app-tabbar {
   position: fixed; z-index: 50; left: 0; right: 0; bottom: 0;
   display: flex; justify-content: center;
+  min-height: var(--tabbar-total-h);
   background: rgba(255,255,255,.94); backdrop-filter: blur(14px);
   border-top: 1px solid var(--c-line);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding: 0 var(--app-safe-right) var(--app-safe-bottom) var(--app-safe-left);
 }
-.app-tabbar-inner { display: flex; width: min(640px, 100%); }
+.app-tabbar-inner { display: flex; width: min(640px, 100%); height: var(--tabbar-content-h); }
 .app-tab {
-  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: 3px; min-height: calc(var(--tabbar-h) - 2px); padding: 5px 0;
+  flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px; height: 100%; padding: 5px 0;
   color: var(--c-ink-3); text-decoration: none; font-size: 11px; line-height: 1.1;
   border: 0; background: transparent; transition: color .15s ease;
 }
@@ -483,8 +525,8 @@ p { margin: 0 0 .8em; }
    响应式（Phone / Tablet / Desktop）
    ========================================================================= */
 @media (max-width: 1023px) {
-  .content-page { padding-inline: max(18px, env(safe-area-inset-left)) max(18px, env(safe-area-inset-right)); }
-  .page-hero { margin-inline: calc(max(18px, env(safe-area-inset-left)) * -1); padding-inline: max(18px, env(safe-area-inset-left)); }
+  .content-page { padding-inline: max(18px, var(--app-safe-left)) max(18px, var(--app-safe-right)); }
+  .page-hero { margin-inline: calc(max(18px, var(--app-safe-left)) * -1) calc(max(18px, var(--app-safe-right)) * -1); padding-inline: max(18px, var(--app-safe-left)) max(18px, var(--app-safe-right)); }
   .training-shell, .result-shell { padding: 18px; }
   .summary-metrics { grid-template-columns: repeat(3, 1fr); }
   .history-dialog-backdrop { padding: 0; }
@@ -502,8 +544,10 @@ p { margin: 0 0 .8em; }
   .history-group-summary { flex-wrap: wrap; }
 }
 @media (max-width: 767px) {
-  .content-page { min-height: calc(100dvh - var(--tabbar-h)); padding: 18px max(14px, env(safe-area-inset-right)) calc(max(20px, env(safe-area-inset-bottom)) + var(--tabbar-h)) max(14px, env(safe-area-inset-left)); }
-  .page-hero { margin: -18px calc(max(14px, env(safe-area-inset-right)) * -1) 18px; padding: 22px max(14px, env(safe-area-inset-right)) 22px max(14px, env(safe-area-inset-left)); }
+  .app-scroll { touch-action: pan-y; }
+  .content-page { min-height: 100%; padding: calc(var(--app-safe-top) + 18px) max(14px, var(--app-safe-right)) calc(var(--tabbar-total-h) + 20px) max(14px, var(--app-safe-left)); }
+  /* Hero 背景绘制到状态栏后方，标题等交互内容从安全区之后开始。 */
+  .page-hero { margin: calc((var(--app-safe-top) + 18px) * -1) calc(max(14px, var(--app-safe-right)) * -1) 18px calc(max(14px, var(--app-safe-left)) * -1); padding: calc(var(--app-safe-top) + 22px) max(14px, var(--app-safe-right)) 22px max(14px, var(--app-safe-left)); }
   .content-page h1 { font-size: 23px; }
   .grid-cards.cols-2 { grid-template-columns: 1fr; }
   .device-stat-grid { grid-template-columns: repeat(3, 1fr); }
@@ -513,17 +557,20 @@ p { margin: 0 0 .8em; }
   .history-mobile-records { display: grid; }
   .history-group-summary span { width: 100%; display: flex; justify-content: space-between; }
   .history-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; }
-  .history-dialog > header { padding: max(12px, env(safe-area-inset-top)) 16px 12px; }
+  .history-dialog > header { padding: max(12px, var(--app-safe-top)) 16px 12px; }
   .history-summary, .replay-panel { padding-inline: 14px; }
   .summary-metrics { grid-template-columns: repeat(2, 1fr); }
   .device-dialog-backdrop, .update-dialog-backdrop, .history-dialog-backdrop {
-    padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+    padding: max(10px, var(--app-safe-top)) max(10px, var(--app-safe-right)) max(10px, var(--app-safe-bottom)) max(10px, var(--app-safe-left));
   }
   .device-dialog, .update-dialog { max-height: calc(100dvh - 20px); border-radius: 18px; }
   .update-version-row, .update-policy-field { align-items: flex-start; flex-direction: column; gap: 8px; }
-  .global-connection { top: max(8px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); }
+  .result-shell { padding: calc(var(--app-safe-top) + 18px) max(18px, var(--app-safe-right)) calc(var(--app-safe-bottom) + 18px) max(18px, var(--app-safe-left)); }
+  .auth-page { padding: calc(var(--app-safe-top) + 18px) max(18px, var(--app-safe-right)) calc(var(--app-safe-bottom) + 18px) max(18px, var(--app-safe-left)); }
 }
 @media (max-width: 479px) {
+  /* 极窄屏将 Hero 文案下移，避免右上连接胶囊覆盖标题。 */
+  .page-hero { padding-top: calc(var(--app-safe-top) + 58px); }
   .card { padding: 14px; }
   .history-card-stats > span { align-items: flex-start; flex-direction: column; gap: 3px; }
   .history-card-stats strong { text-align: left; }
@@ -534,7 +581,7 @@ p { margin: 0 0 .8em; }
 /* ---------- 原生沉浸训练（Android 横屏占满动态视口） ---------- */
 .native-training-route.training-shell {
   height: 100dvh; min-height: 0; display: flex; flex-direction: column;
-  padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  padding: max(8px, var(--app-safe-top)) max(10px, var(--app-safe-right)) max(8px, var(--app-safe-bottom)) max(10px, var(--app-safe-left));
   overflow: hidden;
 }
 .native-training-route .training-toolbar { min-height: 50px; flex: 0 0 auto; margin-bottom: 8px; gap: 12px; }
@@ -544,7 +591,7 @@ p { margin: 0 0 .8em; }
 .native-training-route .training-actions { flex-wrap: nowrap; margin-top: 0; }
 .native-training-route .training-actions .button { min-height: 44px; white-space: nowrap; }
 .native-training-route .training-host { flex: 1 1 auto; min-height: 0; border-radius: 14px; }
-.native-training-route .training-overlay { inset: 62px 8px max(8px, env(safe-area-inset-bottom)); overflow: auto; border-radius: 14px; }
+.native-training-route .training-overlay { inset: 62px 8px max(8px, var(--app-safe-bottom)); overflow: auto; border-radius: 14px; }
 .native-training-route .center-guide { max-height: calc(100dvh - 80px); overflow-y: auto; padding: 18px; }
 @media (max-width: 700px) and (orientation: landscape) {
   .native-training-route .training-toolbar > div:first-child { max-width: 150px; }

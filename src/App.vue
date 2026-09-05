@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { SystemBars, SystemBarsStyle, SystemBarType } from '@capacitor/core'
 import { RouterView } from 'vue-router'
 import { useRoute, useRouter } from 'vue-router'
 import { appLifecycleService, backButtonService, connectionManager, initializeAppServices, transport, updateService } from './app/AppServices'
@@ -14,12 +15,34 @@ const route = useRoute()
 const router = useRouter()
 const androidNative = isAndroidNativeRuntime()
 
+/** 一级 Hero 页面使用深色背景，状态栏需要浅色图标保证可读。 */
+const darkStatusBarRoutes = new Set(['/devices', '/games', '/courses', '/mall', '/mine'])
+
 /** 沉浸路由（训练/结果全屏）：隐藏全局连接胶囊与底部 Tab。 */
 const hideChrome = computed(() => route.meta.hideChrome === true)
 const mobileTrainingLayout = computed(() => androidNative && route.meta.trainingLayout === true)
 let unsubscribeBack: (() => void) | null = null
 let unsubscribeUpdateLifecycle: (() => void) | null = null
 let startupUpdateTimer: number | null = null
+
+/** Edge-to-Edge 下根据页面顶部/底部背景设置系统栏图标明暗。 */
+async function syncSystemBars(): Promise<void> {
+  if (!androidNative) return
+  const darkTopBackground = hideChrome.value || darkStatusBarRoutes.has(route.path)
+  await Promise.allSettled([
+    SystemBars.setStyle({
+      bar: SystemBarType.StatusBar,
+      style: darkTopBackground ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+    }),
+    SystemBars.setStyle({
+      bar: SystemBarType.NavigationBar,
+      style: hideChrome.value ? SystemBarsStyle.Dark : SystemBarsStyle.Light,
+    }),
+  ])
+}
+
+// 路由切换时同步系统栏，避免透明状态栏上的图标与页面背景对比不足。
+watch(() => route.fullPath, () => { void syncSystemBars() }, { immediate: true })
 
 // 全局只初始化一次服务，页面切换不会中断 BLE 监听或丢失当前 Profile。
 onMounted(async () => {
@@ -51,10 +74,23 @@ onBeforeUnmount(async () => {
 </script>
 
 <template>
-  <DeviceConnectionStatus v-if="!hideChrome" class="global-connection" />
-  <DeviceConnectionLoading v-if="!hideChrome" />
-  <p v-if="startupError" class="error app-error">{{ startupError }}</p>
-  <RouterView :class="{ 'native-training-route': mobileTrainingLayout }" />
-  <AppTabBar v-if="!hideChrome" />
-  <UpdateDialog />
+  <div
+    class="app-shell"
+    :class="{
+      'app-shell--immersive': hideChrome,
+      'app-shell--native-training': mobileTrainingLayout,
+    }"
+  >
+    <DeviceConnectionStatus v-if="!hideChrome" class="global-connection" />
+    <DeviceConnectionLoading v-if="!hideChrome" />
+
+    <!-- 仅内容区滚动，避免根文档与固定导航一起产生 WebView 拉伸。 -->
+    <div class="app-scroll">
+      <p v-if="startupError" class="error app-error">{{ startupError }}</p>
+      <RouterView :class="{ 'native-training-route': mobileTrainingLayout }" />
+    </div>
+
+    <AppTabBar v-if="!hideChrome" />
+    <UpdateDialog />
+  </div>
 </template>
