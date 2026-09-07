@@ -3,6 +3,11 @@ import type { TrainingReplay } from './TrainingReplay'
 export type ReplayPlayerState = 'idle' | 'playing' | 'paused' | 'ended'
 export type ReplayMode = 'dynamic' | 'trajectory'
 
+/** 仅提供本次回放绘制需要的历史上下文，避免播放器依赖完整训练记录。 */
+export interface ReplayRenderContext {
+  gameConfig?: unknown
+}
+
 /** 页面控制条需要的播放器状态快照。 */
 export interface ReplayPlayerSnapshot {
   state: ReplayPlayerState
@@ -14,7 +19,7 @@ export interface ReplayPlayerSnapshot {
 /** 每款游戏只实现绘制，播放控制由历史面板统一提供。 */
 export interface ITrainingReplayPlayer {
   mount(container: HTMLElement): Promise<void>
-  load(replay: TrainingReplay): void
+  load(replay: TrainingReplay, context?: ReplayRenderContext): void
   setMode(mode: ReplayMode): void
   play(): void
   pause(): void

@@ -1,9 +1,10 @@
 import { Application, Container, Graphics, Text } from 'pixi.js'
-import type { ITrainingReplayPlayer, ReplayMode, ReplayPlayerSnapshot, ReplayPlayerState } from '../../../core/replay/ITrainingReplayPlayer'
+import type { ITrainingReplayPlayer, ReplayMode, ReplayPlayerSnapshot, ReplayPlayerState, ReplayRenderContext } from '../../../core/replay/ITrainingReplayPlayer'
 import { downsampleForDisplay, sampleAtElapsed } from '../../../core/replay/ReplayMath'
 import { copyTrainingReplay } from '../../../core/replay/TrainingReplayCopy'
 import type { ReplayEvent, TrainingReplay } from '../../../core/replay/TrainingReplay'
-import { createTargetReachViewport, normalizedToScreen } from '../TargetReachViewportMapper'
+import { defaultTargetReachGameConfig, type TargetReachGameConfig } from '../TargetReachGameConfig'
+import { createTargetReachViewport, getPlayerRadiusPx, normalizedToScreen, type TargetReachViewport } from '../TargetReachViewportMapper'
 
 export type { ReplayMode, ReplayPlayerSnapshot, ReplayPlayerState } from '../../../core/replay/ITrainingReplayPlayer'
 export { copyTrainingReplay } from '../../../core/replay/TrainingReplayCopy'
@@ -18,6 +19,39 @@ interface HistoricalTarget {
 // 回放没有训练 HUD，四边使用一致边距，但坐标比例与实时训练完全相同。
 const REPLAY_VIEWPORT_INSETS = { top: 24, right: 24, bottom: 24, left: 24 } as const
 
+/** TargetReach 回放在当前舞台中使用的统一视口与视觉半径。 */
+export interface TargetReachReplayGeometry {
+  viewport: TargetReachViewport
+  playerRadiusPx: number
+  targetRadiusPx: number
+}
+
+/** 旧记录或异常配置只覆盖有效正数，其余字段继续使用当前默认值。 */
+export function resolveTargetReachGameConfig(value: unknown): TargetReachGameConfig {
+  const resolved = structuredClone(defaultTargetReachGameConfig)
+  if (!value || typeof value !== 'object') return resolved
+  const candidate = value as Record<string, unknown>
+  for (const key of ['targetDistance', 'targetRadius', 'playerRadius'] as const) {
+    const next = candidate[key]
+    if (typeof next === 'number' && Number.isFinite(next) && next > 0) resolved[key] = next
+  }
+  return resolved
+}
+
+/** 几何计算保持纯函数，便于验证不同尺寸下与正式训练使用相同半径规则。 */
+export function createTargetReachReplayGeometry(
+  width: number,
+  height: number,
+  config: TargetReachGameConfig,
+): TargetReachReplayGeometry {
+  const viewport = createTargetReachViewport(width, height, REPLAY_VIEWPORT_INSETS)
+  return {
+    viewport,
+    playerRadiusPx: getPlayerRadiusPx(viewport.interactionScale, config.playerRadius),
+    targetRadiusPx: config.targetRadius * viewport.interactionScale,
+  }
+}
+
 /**
  * 只绘制已保存的 TargetReach 历史事实。
  * 它不会生成随机目标、连接 BLE 或重新执行任何命中判定。
@@ -25,6 +59,7 @@ const REPLAY_VIEWPORT_INSETS = { top: 24, right: 24, bottom: 24, left: 24 } as c
 export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
   private app: Application | null = null
   private replay: TrainingReplay | null = null
+  private gameConfig = structuredClone(defaultTargetReachGameConfig)
   private mode: ReplayMode = 'dynamic'
   private state: ReplayPlayerState = 'idle'
   private currentTimeMs = 0
@@ -54,9 +89,10 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
     this.render()
   }
 
-  load(replay: TrainingReplay): void {
+  load(replay: TrainingReplay, context?: ReplayRenderContext): void {
     // 调用方可能传入 Vue Proxy；显式复制基础字段，避免 structuredClone 直接克隆 Proxy。
     this.replay = copyTrainingReplay(replay)
+    this.gameConfig = resolveTargetReachGameConfig(context?.gameConfig)
     this.currentTimeMs = 0
     this.state = 'paused'
     this.lastTickAt = 0
@@ -143,46 +179,48 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
 
   private renderDynamic(): void {
     const replay = this.replay!
+    const geometry = this.currentGeometry()
     const point = sampleAtElapsed(replay.samples, this.currentTimeMs)
     this.pathGraphic!.clear()
     this.targetGraphic!.clear()
     this.clearLabels()
-    this.drawCenter()
+    this.drawCenter(geometry.viewport)
     const target = this.targetAt(this.currentTimeMs)
-    if (target) this.drawTarget(target)
+    if (target) this.drawTarget(target, geometry)
     if (point) {
-      this.drawPath(replay.samples.filter((sample) => sample.elapsedMs >= this.currentTargetStartedAt(this.currentTimeMs) && sample.elapsedMs <= this.currentTimeMs), 0x68d391, 3)
-      const screen = this.toScreen(point.x, point.y)
-      this.playerGraphic!.clear().circle(screen.x, screen.y, 14).fill(0x68d391)
+      this.drawPath(replay.samples.filter((sample) => sample.elapsedMs >= this.currentTargetStartedAt(this.currentTimeMs) && sample.elapsedMs <= this.currentTimeMs), 0x68d391, 3, geometry.viewport)
+      const screen = normalizedToScreen(point, geometry.viewport)
+      this.playerGraphic!.clear().circle(screen.x, screen.y, geometry.playerRadiusPx).fill(0x68d391)
     } else this.playerGraphic!.clear()
   }
 
   private renderFullTrajectory(): void {
     const replay = this.replay!
+    const geometry = this.currentGeometry()
     this.playerGraphic!.clear()
     this.targetGraphic!.clear()
     this.clearLabels()
-    this.drawCenter()
-    this.drawPath(downsampleForDisplay(replay.samples), 0x8fd8ff, 2)
-    for (const target of this.allTargets()) this.drawTarget(target, true)
+    this.drawCenter(geometry.viewport)
+    this.drawPath(downsampleForDisplay(replay.samples), 0x8fd8ff, 2, geometry.viewport)
+    for (const target of this.allTargets()) this.drawTarget(target, geometry, true)
   }
 
-  private drawPath(samples: readonly { x: number; y: number }[], color: number, width: number): void {
+  private drawPath(samples: readonly { x: number; y: number }[], color: number, width: number, viewport: TargetReachViewport): void {
     this.pathGraphic!.clear()
     if (samples.length < 2) return
-    const first = this.toScreen(samples[0].x, samples[0].y)
+    const first = normalizedToScreen(samples[0], viewport)
     this.pathGraphic!.moveTo(first.x, first.y)
     for (const sample of samples.slice(1)) {
-      const point = this.toScreen(sample.x, sample.y)
+      const point = normalizedToScreen(sample, viewport)
       this.pathGraphic!.lineTo(point.x, point.y)
     }
     this.pathGraphic!.stroke({ width, color, alpha: 0.82 })
   }
 
-  private drawTarget(target: HistoricalTarget, withLabel = false): void {
-    const point = this.toScreen(target.x, target.y)
+  private drawTarget(target: HistoricalTarget, geometry: TargetReachReplayGeometry, withLabel = false): void {
+    const point = normalizedToScreen(target, geometry.viewport)
     const color = target.outcome === 'success' ? 0x68d391 : target.outcome === 'failed' ? 0xfc8181 : 0x4da3ff
-    this.targetGraphic!.circle(point.x, point.y, 24).stroke({ width: 4, color, alpha: 1 })
+    this.targetGraphic!.circle(point.x, point.y, geometry.targetRadiusPx).stroke({ width: 4, color, alpha: 1 })
     if (withLabel) {
       const label = new Text({ text: String(target.index), style: { fill: '#ffffff', fontSize: 13, fontWeight: '700' } })
       label.anchor.set(0.5)
@@ -192,8 +230,8 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
   }
 
   /** 中心点帮助查看者判断是否回到中立位置，不代表新的游戏事件。 */
-  private drawCenter(): void {
-    const center = this.toScreen(0, 0)
+  private drawCenter(viewport: TargetReachViewport): void {
+    const center = normalizedToScreen({ x: 0, y: 0 }, viewport)
     this.targetGraphic!.circle(center.x, center.y, 8).stroke({ width: 2, color: 0x91a3ba, alpha: 0.8 })
   }
 
@@ -230,10 +268,9 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
 
   private sortedEvents(): ReplayEvent[] { return [...(this.replay?.events ?? [])].sort((a, b) => a.elapsedMs - b.elapsedMs) }
 
-  private toScreen(x: number, y: number): { x: number; y: number } {
+  private currentGeometry(): TargetReachReplayGeometry {
     const screen = this.app!.screen
-    const viewport = createTargetReachViewport(screen.width, screen.height, REPLAY_VIEWPORT_INSETS)
-    return normalizedToScreen({ x, y }, viewport)
+    return createTargetReachReplayGeometry(screen.width, screen.height, this.gameConfig)
   }
 
   private clearLabels(): void { this.labels.removeChildren().forEach((label) => label.destroy()) }

@@ -36,8 +36,8 @@ async function mountPlayer(): Promise<void> {
   try {
     await player.mount(host.value)
     unsubscribe = player.onChanged((next) => { snapshot.value = next })
-    // Vue Props 会被深度代理；播放器内部还会生成受限的独立普通对象快照。
-    player.load(toRaw(replay))
+    // Vue Props 会被深度代理；只传原始 Replay 与渲染配置，不让播放器依赖完整记录。
+    player.load(toRaw(replay), { gameConfig: toRaw(props.record.gameConfig) })
     player.setMode(mode.value)
     ready.value = true
   } catch (error) {
@@ -63,7 +63,36 @@ function emptySnapshot(): ReplayPlayerSnapshot { return { state: 'idle', current
 
 <template>
   <section class="replay-panel">
-    <template v-if="record.replay && !loadError && !unavailableMessage"><div class="replay-tabs"><button class="button" :class="{ primary: mode === 'dynamic' }" @click="mode = 'dynamic'">动态回放</button><button class="button" :class="{ primary: mode === 'trajectory' }" @click="mode = 'trajectory'">完整轨迹</button></div><div ref="host" class="replay-host"></div><div v-if="ready && mode === 'dynamic'" class="replay-controls"><button class="button primary" @click="toggle">{{ snapshot.state === 'playing' ? '暂停' : '播放' }}</button><button class="button" @click="restart">重新开始</button><input type="range" min="0" :max="snapshot.durationMs" :value="snapshot.currentTimeMs" @input="seek"><span>{{ format(snapshot.currentTimeMs) }} / {{ format(snapshot.durationMs) }}</span><div class="row"><button v-for="rate in [0.5, 1, 2]" :key="rate" class="button" :class="{ primary: snapshot.playbackRate === rate }" @click="setRate(rate)">{{ rate }}x</button></div></div><p v-else-if="ready" class="muted small">完整轨迹展示训练当时保存的二维运动事实，不重新执行游戏判定。</p></template>
-    <p v-else-if="loadError" class="error replay-empty">{{ loadError }}</p><p v-else-if="unavailableMessage" class="muted replay-empty">{{ unavailableMessage }}</p><p v-else class="muted replay-empty">该训练记录创建于轨迹回放功能启用前，暂无训练轨迹数据。</p>
+    <template v-if="record.replay && !loadError && !unavailableMessage">
+      <div class="replay-tabs" aria-label="回放显示方式">
+        <button class="button" :class="{ primary: mode === 'dynamic' }" :aria-pressed="mode === 'dynamic'" @click="mode = 'dynamic'">动态回放</button>
+        <button class="button" :class="{ primary: mode === 'trajectory' }" :aria-pressed="mode === 'trajectory'" @click="mode = 'trajectory'">完整轨迹</button>
+      </div>
+      <div ref="host" class="replay-host"></div>
+      <div v-if="ready && mode === 'dynamic'" class="replay-controls">
+        <div class="replay-primary-actions">
+          <button class="button primary" @click="toggle">{{ snapshot.state === 'playing' ? '暂停' : '播放' }}</button>
+          <button class="button" @click="restart">重新开始</button>
+        </div>
+        <div class="replay-timeline">
+          <input type="range" min="0" :max="snapshot.durationMs" :value="snapshot.currentTimeMs" aria-label="回放进度" @input="seek">
+          <span class="replay-time">{{ format(snapshot.currentTimeMs) }} / {{ format(snapshot.durationMs) }}</span>
+        </div>
+        <div class="replay-rate-actions" aria-label="播放速度">
+          <button
+            v-for="rate in [0.5, 1, 2]"
+            :key="rate"
+            class="button"
+            :class="{ primary: snapshot.playbackRate === rate }"
+            :aria-pressed="snapshot.playbackRate === rate"
+            @click="setRate(rate)"
+          >{{ rate }}x</button>
+        </div>
+      </div>
+      <p v-else-if="ready" class="muted small">完整轨迹展示训练当时保存的二维运动事实，不重新执行游戏判定。</p>
+    </template>
+    <p v-else-if="loadError" class="error replay-empty">{{ loadError }}</p>
+    <p v-else-if="unavailableMessage" class="muted replay-empty">{{ unavailableMessage }}</p>
+    <p v-else class="muted replay-empty">该训练记录创建于轨迹回放功能启用前，暂无训练轨迹数据。</p>
   </section>
 </template>
