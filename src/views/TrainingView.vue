@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import CenterCalibrationGuide from '../components/calibration/CenterCalibrationGuide.vue'
-import DeviceConnectionStatus from '../components/app/DeviceConnectionStatus.vue'
+import MobileTrainingHud from '../components/training/MobileTrainingHud.vue'
 import { appLifecycleService, connectionManager, displayService, persistTrainingResult, sensorService, updateInstallGuard } from '../app/AppServices'
 import type { GameHudSnapshot } from '../core/game/TrainingGameEvents'
 import type { ITrainingGame } from '../core/game/ITrainingGame'
@@ -74,10 +74,12 @@ onMounted(async () => {
   })
   const displayState = await displayService.enterTrainingMode()
   displayModeEntered = true
-  if (displayState.native && !displayState.orientationLocked) displayMessage.value = '系统未能锁定横屏，建议将设备横向放置后继续训练。'
-  // 等待方向变化和 CSS 布局稳定后再创建 Pixi Canvas。
-  await nextTick()
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  const displayWarnings: string[] = []
+  if (displayState.native && !displayState.orientationLocked) displayWarnings.push('系统未能锁定横屏，建议将设备横向放置。')
+  if (displayState.native && !displayState.systemBarsHidden) displayWarnings.push('系统未能进入完整全屏模式。')
+  displayMessage.value = displayWarnings.join(' ')
+  // 系统栏隐藏会再次改变 WebView 尺寸，等待两帧后再创建 Pixi Canvas。
+  await waitForLayoutStable()
   if (!gameHost.value) { errorMessage.value = '游戏容器尚未创建。'; return }
   try {
     await game.mount(gameHost.value)
@@ -108,11 +110,21 @@ function handleAppActiveChanged(active: boolean): void {
     game?.pause()
     return
   }
+  // 部分 Android 系统会在回前台后恢复系统栏，非阻塞地重新应用训练显示状态。
+  if (displayModeEntered) void displayService.refreshTrainingMode()
   if (!backgroundedDuringSession || trainingState.value !== 'paused') return
   backgroundedDuringSession = false
   sensorService.resetCalibration()
   preflight.value = 'recalibrating'
   if (!connected.value) void connectionManager.reconnectNow()
+}
+
+/** 等待 Vue DOM 更新和连续两次浏览器布局，确保 Pixi 读取最终视口。 */
+async function waitForLayoutStable(): Promise<void> {
+  await nextTick()
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+  })
 }
 
 function centerCompleted(): void {
@@ -164,17 +176,30 @@ function formatError(error: unknown): string { return error instanceof Error ? e
 
 <template>
   <main class="training-shell">
-    <header class="training-toolbar">
+    <!-- 桌面端保留完整工具栏，Android 改用覆盖在画布上的轻量 HUD。 -->
+    <header v-if="!androidNative" class="training-toolbar">
       <div><p class="eyebrow">{{ module?.definition.name ?? '训练' }}</p><h1>{{ preflight !== 'playing' ? '训练准备' : hud.title }}</h1><p v-if="hud.subtitle" class="muted small">{{ hud.subtitle }}</p></div>
       <div class="scoreboard"><span v-for="metric in hud.metrics" :key="metric.label">{{ metric.label }} {{ metric.value }}</span><span>{{ trainingState }}</span></div>
-      <div class="row training-actions"><DeviceConnectionStatus v-if="androidNative" /><button class="button" :disabled="!canPause" @click="togglePause">{{ trainingState === 'paused' ? '继续' : '暂停' }}</button><button class="button danger" @click="abort">结束训练</button></div>
+      <div class="row training-actions"><button class="button" :disabled="!canPause" @click="togglePause">{{ trainingState === 'paused' ? '继续' : '暂停' }}</button><button class="button danger" @click="abort">结束训练</button></div>
     </header>
     <div ref="gameHost" class="game-host training-host"></div>
+    <MobileTrainingHud
+      v-if="androidNative"
+      :hud="hud"
+      :training-state="trainingState"
+      :can-pause="canPause"
+      :show-metrics="preflight === 'playing'"
+      @pause="togglePause"
+      @abort="abort"
+    />
     <div v-if="preflight !== 'playing'" class="training-overlay">
       <CenterCalibrationGuide v-if="preflight === 'center-guide' || (preflight === 'recalibrating' && connected)" @completed="centerCompleted" />
       <section v-else class="center-guide"><h2>{{ preflight === 'recalibrating' ? '正在恢复设备连接' : '当前设备未连接' }}</h2><p>{{ preflight === 'recalibrating' ? '训练已暂停。设备恢复后请重新确认自然中心；如需手动处理设备，请使用右上角设备状态菜单。' : '系统正在尝试恢复已绑定设备。如需重新连接、更换设备或忘记设备，请使用右上角设备状态菜单。' }}</p><button class="button primary" @click="retryConnection">重新连接</button></section>
     </div>
-    <p v-if="errorMessage" class="error">{{ errorMessage }}</p>
-    <p v-if="displayMessage" class="training-display-hint">{{ displayMessage }}</p>
+    <!-- 原生训练提示保持悬浮，不能挤压全屏画布。 -->
+    <div class="training-message-stack">
+      <p v-if="errorMessage" class="error training-error-hint">{{ errorMessage }}</p>
+      <p v-if="displayMessage" class="training-display-hint">{{ displayMessage }}</p>
+    </div>
   </main>
 </template>

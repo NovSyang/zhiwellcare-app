@@ -6,6 +6,7 @@ import { createEmptyBatteryState, getBatteryFillPercent, isLowBatteryPercent } f
 import type { SensorConnectionSnapshot } from '../../core/sensor/SensorConnectionManager'
 import type { SensorRuntimeSnapshot } from '../../core/sensor/SensorService'
 
+const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false })
 const snapshot = ref<SensorRuntimeSnapshot>({ state: 'idle', frame: null, gameInput: { x: 0, y: 0, connected: false, calibrated: false, timestamp: 0 }, rateHz: 0, rawHex: '', battery: createEmptyBatteryState() })
 const connection = ref<SensorConnectionSnapshot>(connectionManager.getSnapshot())
 const connected = computed(() => snapshot.value.state === 'connected')
@@ -13,6 +14,13 @@ const batteryText = computed(() => snapshot.value.battery.percent === null ? '--
 const batteryFillPercent = computed(() => getBatteryFillPercent(snapshot.value.battery.percent))
 const batteryLow = computed(() => isLowBatteryPercent(snapshot.value.battery.percent))
 const batteryAriaLabel = computed(() => snapshot.value.battery.percent === null ? '设备电量读取中' : `设备电量 ${snapshot.value.battery.percent}%`)
+// Compact 模式仍通过完整标签向辅助技术说明连接状态与电量。
+const statusAriaLabel = computed(() => {
+  if (!connected.value) return '设备未连接'
+  return snapshot.value.battery.percent === null
+    ? '设备已连接，电量读取中'
+    : `设备已连接，设备电量 ${snapshot.value.battery.percent}%`
+})
 const open = ref(false)
 const showSwitchDialog = ref(false)
 const root = ref<HTMLElement | null>(null)
@@ -47,13 +55,16 @@ async function forget(): Promise<void> {
     <div class="device-status-menu">
       <button
         class="device-status"
+        :class="{ 'device-status--compact': props.compact }"
         :data-connected="connected"
         :aria-expanded="open"
+        :aria-label="statusAriaLabel"
         aria-haspopup="menu"
         @click="open = !open"
       >
         <span class="status-dot"></span>
-        <span>{{ connected ? '设备已连接' : '设备未连接' }}</span>
+        <!-- 已连接时省略重复文案；断线时必须保留明确提示。 -->
+        <span v-if="!props.compact || !connected">{{ connected ? '设备已连接' : props.compact ? '未连接' : '设备未连接' }}</span>
         <span
           v-if="connected"
           class="battery-status"

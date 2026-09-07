@@ -3,6 +3,7 @@ import type { ITrainingReplayPlayer, ReplayMode, ReplayPlayerSnapshot, ReplayPla
 import { downsampleForDisplay, sampleAtElapsed } from '../../../core/replay/ReplayMath'
 import { copyTrainingReplay } from '../../../core/replay/TrainingReplayCopy'
 import type { ReplayEvent, TrainingReplay } from '../../../core/replay/TrainingReplay'
+import { createTargetReachViewport, normalizedToScreen } from '../TargetReachViewportMapper'
 
 export type { ReplayMode, ReplayPlayerSnapshot, ReplayPlayerState } from '../../../core/replay/ITrainingReplayPlayer'
 export { copyTrainingReplay } from '../../../core/replay/TrainingReplayCopy'
@@ -13,6 +14,9 @@ interface HistoricalTarget {
   y: number
   outcome: 'success' | 'failed' | null
 }
+
+// 回放没有训练 HUD，四边使用一致边距，但坐标比例与实时训练完全相同。
+const REPLAY_VIEWPORT_INSETS = { top: 24, right: 24, bottom: 24, left: 24 } as const
 
 /**
  * 只绘制已保存的 TargetReach 历史事实。
@@ -228,8 +232,8 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
 
   private toScreen(x: number, y: number): { x: number; y: number } {
     const screen = this.app!.screen
-    const padding = 60
-    return { x: screen.width / 2 + x * Math.max(0, screen.width / 2 - padding), y: screen.height / 2 - y * Math.max(0, screen.height / 2 - padding) }
+    const viewport = createTargetReachViewport(screen.width, screen.height, REPLAY_VIEWPORT_INSETS)
+    return normalizedToScreen({ x, y }, viewport)
   }
 
   private clearLabels(): void { this.labels.removeChildren().forEach((label) => label.destroy()) }

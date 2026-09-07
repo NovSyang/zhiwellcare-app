@@ -11,6 +11,12 @@ import {
 import type { TargetReachGameEvents } from './TargetReachGameEvents'
 import { distanceBetween, getTargetPosition } from './TargetReachMath'
 import {
+  createTargetReachViewport,
+  getPlayerRadiusPx,
+  getTargetReachViewportInsets,
+  normalizedToScreen,
+} from './TargetReachViewportMapper'
+import {
   buildTargetReachTrainingResult,
   type TargetAttemptResult,
   type TargetReachTrainingResult,
@@ -35,6 +41,7 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
   private currentMaxInput = 0
   private attempts: TargetAttemptResult[] = []
   private lastNotifiedState: TrainingSessionState = 'idle'
+  private renderedInteractionScale = -1
 
   constructor(
     private readonly config: TargetReachGameConfig = structuredClone(defaultTargetReachGameConfig),
@@ -53,8 +60,9 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
     })
     container.appendChild(app.canvas)
 
-    const player = new Graphics().circle(0, 0, this.config.playerRadius).fill('#68d391')
-    const target = new Graphics().circle(0, 0, 34).stroke({ width: 5, color: '#4da3ff', alpha: 1 })
+    // 玩家球和目标圈的半径取决于最终视口，首次 render 时再绘制。
+    const player = new Graphics()
+    const target = new Graphics()
     const countdownText = new Text({ text: '', style: { fill: '#ffffff', fontSize: 72, fontWeight: '700' } })
     const directionText = new Text({ text: '', style: { fill: '#8fd8ff', fontSize: 22, fontWeight: '600' } })
     countdownText.anchor.set(0.5)
@@ -132,6 +140,7 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
     this.target = null
     this.countdownText = null
     this.directionText = null
+    this.renderedInteractionScale = -1
   }
 
   private update(now: number): void {
@@ -267,30 +276,42 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
   private render(now: number): void {
     const { app, player, target, countdownText, directionText } = this
     if (!app || !player || !target || !countdownText || !directionText) return
-    const centerX = app.screen.width / 2
-    const centerY = app.screen.height / 2
-    const rangeX = Math.max(0, app.screen.width / 2 - 70)
-    const rangeY = Math.max(0, app.screen.height / 2 - 70)
-    player.position.set(centerX + this.latestInput.x * rangeX, centerY - this.latestInput.y * rangeY)
+    const insets = getTargetReachViewportInsets(app.screen.width, app.screen.height)
+    const viewport = createTargetReachViewport(app.screen.width, app.screen.height, insets)
+    this.redrawViewportGeometry(viewport.interactionScale)
+    const playerPoint = normalizedToScreen(this.latestInput, viewport)
+    player.position.set(playerPoint.x, playerPoint.y)
     player.alpha = this.latestInput.connected ? 1 : 0.35
     const snapshot = this.session.getSnapshot(now)
 
     if (this.currentDirection) {
       const point = getTargetPosition(this.currentDirection, this.config.targetDistance)
-      target.position.set(centerX + point.x * rangeX, centerY - point.y * rangeY)
+      const targetPoint = normalizedToScreen(point, viewport)
+      target.position.set(targetPoint.x, targetPoint.y)
       directionText.text = directionLabel(this.currentDirection)
-      directionText.position.set(centerX, 40)
+      // 方向文字位于顶部预留区中线，不与左右两侧 HUD 抢占空间。
+      directionText.position.set(viewport.centerX, Math.max(22, viewport.insets.top / 2))
       directionText.visible = snapshot.state === 'playing'
     }
     if (snapshot.state === 'countdown') {
       countdownText.text = String(Math.max(1, Math.ceil(snapshot.countdownRemainingMs / 1000)))
-      countdownText.position.set(centerX, centerY)
+      countdownText.position.set(viewport.centerX, viewport.centerY)
       countdownText.visible = true
       target.visible = false
       directionText.visible = false
     } else {
       countdownText.visible = false
     }
+  }
+
+  /** 仅在视口比例变化时重绘半径，避免 Pixi 每帧重复创建相同几何。 */
+  private redrawViewportGeometry(interactionScale: number): void {
+    if (!this.player || !this.target || this.renderedInteractionScale === interactionScale) return
+    const playerRadiusPx = getPlayerRadiusPx(interactionScale, this.config.playerRadius)
+    const targetRadiusPx = this.config.targetRadius * interactionScale
+    this.player.clear().circle(0, 0, playerRadiusPx).fill('#68d391')
+    this.target.clear().circle(0, 0, targetRadiusPx).stroke({ width: 5, color: '#4da3ff', alpha: 1 })
+    this.renderedInteractionScale = interactionScale
   }
 
   private notifySessionState(): void {
