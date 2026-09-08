@@ -1,5 +1,6 @@
 import type { GameDefinition } from '../core/game/GameDefinition'
 import type { GameModule } from '../core/game/GameModule'
+import { kartRacingGameModule } from './kart-racing/KartRacingGameModule'
 import { riverDriftGameModule } from './river-drift/RiverDriftGameModule'
 import { targetReachGameModule } from './target-reach/TargetReachGameModule'
 import { trajectoryFollowGameModule } from './trajectory-follow/TrajectoryFollowGameModule'
@@ -18,7 +19,7 @@ export function createGameRegistry(modules: readonly RegisteredGameModule[]): Ma
 }
 
 // 正式游戏顺序同时决定历史和调试接口返回的稳定顺序。
-const gameRegistry = createGameRegistry([targetReachGameModule, trajectoryFollowGameModule, riverDriftGameModule])
+const gameRegistry = createGameRegistry([targetReachGameModule, trajectoryFollowGameModule, riverDriftGameModule, kartRacingGameModule])
 
 export function getGameModule(gameId: string): RegisteredGameModule | null {
   return gameRegistry.get(gameId) ?? null

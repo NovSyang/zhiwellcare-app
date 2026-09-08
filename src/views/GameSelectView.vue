@@ -180,7 +180,8 @@ function tagClass(card: GameCardModel, tag: MatchTag): string {
 }
 
 function formatPresets(presets: readonly number[]): string {
-  return presets.length ? `${presets.join(' / ')} 分钟` : '—'
+  // 空预设代表由赛道或目标完成条件结束，而不是缺失目录数据。
+  return presets.length ? `${presets.join(' / ')} 分钟` : '固定赛道'
 }
 
 function coverGlyph(name: string): string {

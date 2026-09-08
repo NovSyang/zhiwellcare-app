@@ -79,5 +79,18 @@ export const mockCatalog: CatalogSnapshot = {
       categoryLabel: '腕部协调',
       playMode: 'active-force',
     },
+    {
+      gameId: 'kart-racing',
+      name: '欢乐卡丁车',
+      summary: '控制卡丁车完成固定赛道，左右转向、前向加速、后向减速，途中收集金币并避开障碍。',
+      requiredTags: [DeviceCapabilityTag.PostureSensor],
+      // 空预设表示按固定赛道完成，不使用传统分钟选项。
+      durationPresetsMin: [],
+      resourceVersion: '1.0.0',
+      resourceUrl: '',
+      status: 'on',
+      categoryLabel: '腕部协调',
+      playMode: 'active-force',
+    },
   ],
 }

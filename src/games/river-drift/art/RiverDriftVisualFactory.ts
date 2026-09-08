@@ -1,20 +1,13 @@
 import { Application, Container, FillGradient, Graphics, Sprite, Texture } from 'pixi.js'
+import {
+  createMascotVisual,
+  updateMascotVisual as updateSharedMascotVisual,
+  type MascotVisual,
+} from '../../../shared/game-art/mascot/MascotVisualFactory'
 import type { RiverDriftObstacleType } from '../RiverDriftWorld'
 import { riverDriftColors } from './RiverDriftVisualStyle'
 
-export interface MascotVisual {
-  root: Container
-  base: Graphics
-  supportRing: Graphics
-  stem: Graphics
-  topShell: Graphics
-  leftContact: Graphics
-  rightContact: Graphics
-  face: Container
-  openFace: Graphics
-  closedFace: Graphics
-  homeY: number
-}
+export type { MascotVisual } from '../../../shared/game-art/mascot/MascotVisualFactory'
 
 export interface BoatVisual {
   root: Container
@@ -52,39 +45,7 @@ function verticalGradient(top: number, bottom: number): FillGradient | number {
 
 /** 创建可独立控制表情和倾斜的设备角色。 */
 export function createRiverDriftMascot(): MascotVisual {
-  const root = new Container({ label: 'mascot' })
-  const base = new Graphics({ label: 'blue-hemisphere' })
-    .moveTo(-39, -8).arc(0, -8, 39, Math.PI, Math.PI * 2).lineTo(39, -8)
-    .quadraticCurveTo(0, 25, -39, -8).closePath()
-    .fill(verticalGradient(riverDriftColors.deviceBlue, riverDriftColors.deviceBlueShade))
-    .stroke({ width: 3, color: 0xeaf6fb })
-  const supportRing = new Graphics({ label: 'support-ring' })
-    .ellipse(0, -18, 28, 9).fill(0xf8fbfd).stroke({ width: 3, color: 0xb9cfdb })
-  const stem = new Graphics({ label: 'wide-stem' })
-    .roundRect(-17, -55, 34, 38, 13)
-    .fill(verticalGradient(riverDriftColors.whiteShell, riverDriftColors.whiteShellShade))
-    .stroke({ width: 3, color: 0x86a5b7 })
-  const topShell = new Graphics({ label: 'wide-top-shell' })
-    .roundRect(-43, -88, 86, 39, 19)
-    .fill(verticalGradient(0xffffff, 0xdce9ef))
-    .stroke({ width: 3, color: 0x7898aa })
-  const leftContact = new Graphics({ label: 'left-contact' })
-    .ellipse(-20, -80, 15, 7).fill(riverDriftColors.contact)
-  const rightContact = new Graphics({ label: 'right-contact' })
-    .ellipse(20, -80, 15, 7).fill(riverDriftColors.contact)
-  const face = new Container({ label: 'independent-face' })
-  const openFace = new Graphics({ label: 'open-face' })
-    .circle(-8, -63, 2.7).circle(8, -63, 2.7).fill(riverDriftColors.contact)
-    .arc(0, -58, 7, 0.25, Math.PI - 0.25).stroke({ width: 2, color: riverDriftColors.contact })
-  const closedFace = new Graphics({ label: 'closed-face' })
-    .moveTo(-12, -63).quadraticCurveTo(-8, -60, -4, -63)
-    .moveTo(4, -63).quadraticCurveTo(8, -60, 12, -63)
-    .arc(0, -57, 6, 0.35, Math.PI - 0.35)
-    .stroke({ width: 2.2, color: riverDriftColors.contact })
-  closedFace.visible = false
-  face.addChild(openFace, closedFace)
-  root.addChild(base, supportRing, stem, topShell, leftContact, rightContact, face)
-  return { root, base, supportRing, stem, topShell, leftContact, rightContact, face, openFace, closedFace, homeY: -4 }
+  return createMascotVisual()
 }
 
 /** 创建包含前后遮挡层级的 2.5D 小船。 */
@@ -117,11 +78,7 @@ export function createRiverDriftBoatVisual(): BoatVisual {
 
 /** 眨眼节奏完全由有效时间决定，回放 Seek 后也能得到相同表情。 */
 export function updateRiverDriftMascot(visual: MascotVisual, elapsedMs: number, hit: boolean, tilt: number): void {
-  const blink = elapsedMs % 4_200 >= 4_070
-  visual.openFace.visible = !hit && !blink
-  visual.closedFace.visible = hit || blink
-  visual.root.rotation = tilt
-  visual.root.position.y = visual.homeY + Math.sin(elapsedMs / 620) * 2
+  updateSharedMascotVisual(visual, elapsedMs, { hit, steering: tilt / 0.045 })
 }
 
 /** 金币包含投影、厚度、正面、内圈和左上高光。 */
