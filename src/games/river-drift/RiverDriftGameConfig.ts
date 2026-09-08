@@ -21,7 +21,12 @@ export interface RiverDriftGameConfig {
   hitInvulnerabilityMs: number
   obstacleMinIntervalMs: number
   obstacleMaxIntervalMs: number
+  /** @deprecated 金币已改为空间间距生成，仅为兼容旧训练记录保留。 */
   coinPatternIntervalMs: number
+  coinPatternSpacingMin: number
+  coinPatternSpacingMax: number
+  coinItemSpacing: number
+  maxVisibleCoins: number
   movementThreshold: number
   metricSampleIntervalMs: number
   stopSpawningBeforeEndMs: number
@@ -56,11 +61,15 @@ export const defaultRiverDriftGameConfig: RiverDriftGameConfig = {
   obstacleMinIntervalMs: 2_400,
   obstacleMaxIntervalMs: 3_400,
   coinPatternIntervalMs: 1_100,
+  coinPatternSpacingMin: 0.24,
+  coinPatternSpacingMax: 0.34,
+  coinItemSpacing: 0.11,
+  maxVisibleCoins: 16,
   movementThreshold: 0.10,
   metricSampleIntervalMs: 40,
   stopSpawningBeforeEndMs: 10_000,
   riverSegmentCount: 7,
-  coinPoolSize: 48,
+  coinPoolSize: 32,
   obstaclePoolSize: 12,
   particlePoolSize: 80,
   debug: false,

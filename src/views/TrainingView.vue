@@ -27,6 +27,15 @@ const pauseReason = ref<PauseReason>('none')
 const connected = ref(false)
 const hud = ref<GameHudSnapshot>({ title: '训练准备', metrics: [] })
 const canPause = computed(() => preflight.value === 'playing' && (trainingState.value === 'playing' || trainingState.value === 'paused'))
+// 桌面工具栏只展示面向用户的中文状态，不暴露内部状态枚举。
+const trainingStateLabel = computed(() => ({
+  idle: '准备中',
+  countdown: '准备中',
+  playing: '训练中',
+  paused: '已暂停',
+  completed: '已完成',
+  aborted: '已结束',
+})[trainingState.value])
 const replayRecorder = new TrainingReplayRecorder(40)
 const androidNative = isAndroidNativeRuntime()
 let unsubscribe: (() => void) | null = null
@@ -179,7 +188,7 @@ function formatError(error: unknown): string { return error instanceof Error ? e
     <!-- 桌面端保留完整工具栏，Android 改用覆盖在画布上的轻量 HUD。 -->
     <header v-if="!androidNative" class="training-toolbar">
       <div><p class="eyebrow">{{ module?.definition.name ?? '训练' }}</p><h1>{{ preflight !== 'playing' ? '训练准备' : hud.title }}</h1><p v-if="hud.subtitle" class="muted small">{{ hud.subtitle }}</p></div>
-      <div class="scoreboard"><span v-for="metric in hud.metrics" :key="metric.label">{{ metric.label }} {{ metric.value }}</span><span>{{ trainingState }}</span></div>
+      <div class="scoreboard"><span v-for="metric in hud.metrics" :key="metric.label">{{ metric.label }} {{ metric.value }}</span><span>{{ trainingStateLabel }}</span></div>
       <div class="row training-actions"><button class="button" :disabled="!canPause" @click="togglePause">{{ trainingState === 'paused' ? '继续' : '暂停' }}</button><button class="button danger" @click="abort">结束训练</button></div>
     </header>
     <div ref="gameHost" class="game-host training-host"></div>

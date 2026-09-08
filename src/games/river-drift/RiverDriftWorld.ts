@@ -49,7 +49,7 @@ export class RiverDriftWorld {
   collisionCount = 0
   worldDistance = 0
   private random = new RiverDriftRandom(1)
-  private nextCoinAt = 1_000
+  private nextCoinDistance = 0.16
   private nextObstacleAt = 8_000
   private coinSequence = 0
   private obstacleSequence = 0
@@ -75,7 +75,7 @@ export class RiverDriftWorld {
     this.spawnedObstacles = 0
     this.collisionCount = 0
     this.worldDistance = 0
-    this.nextCoinAt = 1_000
+    this.nextCoinDistance = 0.16
     this.nextObstacleAt = 8_000
     this.coinSequence = 0
     this.obstacleSequence = 0
@@ -148,9 +148,13 @@ export class RiverDriftWorld {
   private spawnDueEntities(elapsedMs: number): void {
     const stopAt = this.config.sessionDurationMs - this.config.stopSpawningBeforeEndMs
     if (elapsedMs >= stopAt) return
-    while (elapsedMs >= this.nextCoinAt) {
+    while (this.worldDistance >= this.nextCoinDistance) {
+      // 即使同屏金币已满也继续推进阈值，避免空位出现时集中补生成。
       this.spawnCoinPattern(elapsedMs)
-      this.nextCoinAt += this.config.coinPatternIntervalMs
+      this.nextCoinDistance += this.random.range(
+        this.config.coinPatternSpacingMin,
+        this.config.coinPatternSpacingMax,
+      )
     }
     while (elapsedMs >= this.nextObstacleAt) {
       this.spawnObstacle(elapsedMs)
@@ -167,7 +171,14 @@ export class RiverDriftWorld {
       // 引导轨迹必须绕开真实障碍；没有合适障碍时改用中立的 S 型轨迹。
       patternType = upstreamObstacle ? (upstreamObstacle.x < center ? 'guide-right' : 'guide-left') : 's-curve'
     }
-    const points = buildRiverDriftCoinPattern(patternType, center, this.config.riverWidthRatio)
+    const points = buildRiverDriftCoinPattern(
+      patternType,
+      center,
+      this.config.riverWidthRatio,
+      this.config.coinItemSpacing,
+    )
+    const activeCoinCount = this.coins.reduce((count, coin) => count + Number(coin.active), 0)
+    if (activeCoinCount + points.length > this.config.maxVisibleCoins) return
     for (const point of points) {
       const coin = this.coins.find((item) => !item.active)
       if (!coin) break
@@ -256,15 +267,19 @@ export function buildRiverDriftCoinPattern(
   type: RiverDriftCoinPatternType,
   centerX: number,
   riverWidth: number,
+  itemSpacing = defaultCoinItemSpacing,
 ): RiverDriftPoint[] {
   const half = riverWidth * 0.34
-  const values = type === 'straight' ? [0, 0, 0, 0]
-    : type === 'horizontal' ? [-1, -0.5, 0, 0.5, 1]
-      : type === 's-curve' ? [-0.75, 0, 0.75, 0, -0.75]
-        : type === 'guide-left' ? [0.65, 0.2, -0.25, -0.65]
-          : [-0.65, -0.2, 0.25, 0.65]
-  return values.map((value, index) => ({ x: centerX + value * half, y: -0.06 - index * 0.075 }))
+  const values = type === 'straight' ? [0, 0, 0]
+    : type === 'horizontal' ? [-0.75, 0, 0.75]
+      : type === 's-curve' ? [-0.72, 0.38, 0.72, -0.38]
+        : type === 'guide-left' ? [0.62, 0, -0.62]
+          : [-0.62, 0, 0.62]
+  return values.map((value, index) => ({ x: centerX + value * half, y: -0.06 - index * itemSpacing }))
 }
+
+// 独立默认值让旧调用方在不传新配置时仍得到一致的轨迹。
+const defaultCoinItemSpacing = 0.11
 
 /** 单障碍覆盖远低于 55%，同时给船体和安全边距留下空间。 */
 export function riverDriftObstacleCoverage(obstacleRadius: number, riverWidth: number): number {

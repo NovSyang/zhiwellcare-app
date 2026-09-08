@@ -29,6 +29,8 @@ describe('RiverDriftReplay', () => {
     const random = vi.spyOn(Math, 'random').mockImplementation(() => { throw new Error('回放不应随机') })
     expect(() => new RiverDriftReplayPlayer().load(replay, { gameConfig: { worldSpeed: 0, boatRadius: Number.NaN } })).not.toThrow()
     expect(resolveRiverDriftGameConfig({ worldSpeed: 0 }).worldSpeed).toBe(defaultRiverDriftGameConfig.worldSpeed)
+    // 旧记录没有空间节奏字段时，会补充当前默认值而无需数据迁移。
+    expect(resolveRiverDriftGameConfig({ coinPatternIntervalMs: 900 }).coinPatternSpacingMin).toBe(defaultRiverDriftGameConfig.coinPatternSpacingMin)
     random.mockRestore()
   })
 

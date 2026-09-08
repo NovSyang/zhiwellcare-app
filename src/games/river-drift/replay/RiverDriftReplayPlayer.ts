@@ -6,6 +6,7 @@ import type { ReplayEvent, TrainingReplay } from '../../../core/replay/TrainingR
 import { isRiverDriftReplayEvent, type CoinSpawnPayload, type ObstacleSpawnPayload, type SegmentSpawnPayload } from '../RiverDriftGameEvents'
 import { defaultRiverDriftGameConfig, type RiverDriftGameConfig } from '../RiverDriftGameConfig'
 import { stepRiverDriftBoat, type RiverDriftBoatState } from '../RiverDriftPhysics'
+import { RiverDriftDynamicReplayArt, type ReplayCoinVisualState, type ReplayObstacleVisualState } from '../art/RiverDriftDynamicReplayArt'
 
 interface RiverDriftReplayFrame extends RiverDriftBoatState {
   elapsedMs: number
@@ -42,6 +43,7 @@ export class RiverDriftReplayPlayer implements ITrainingReplayPlayer {
   private playbackRate = 1
   private lastTickAt = 0
   private scene = new Graphics()
+  private dynamicArt: RiverDriftDynamicReplayArt | null = null
   private listeners = new Set<(snapshot: ReplayPlayerSnapshot) => void>()
   private resizeObserver: ResizeObserver | null = null
 
@@ -66,6 +68,7 @@ export class RiverDriftReplayPlayer implements ITrainingReplayPlayer {
     const start = this.events.find((event) => event.type === 'river-start')
     if (!start) throw new Error('漂流回放缺少训练开始事件。')
     this.frames = buildRiverDriftReplayFrames(this.replay, this.events, this.config)
+    this.rebuildDynamicArt()
     this.currentTimeMs = 0
     this.state = 'paused'
     this.lastTickAt = 0
@@ -103,6 +106,8 @@ export class RiverDriftReplayPlayer implements ITrainingReplayPlayer {
   destroy(): void {
     this.resizeObserver?.disconnect()
     this.resizeObserver = null
+    this.dynamicArt?.destroy()
+    this.dynamicArt = null
     this.app?.destroy(true, { children: true })
     this.app = null
     this.scene = new Graphics()
@@ -123,33 +128,37 @@ export class RiverDriftReplayPlayer implements ITrainingReplayPlayer {
   private render(): void {
     if (!this.app || !this.replay || this.frames.length === 0) return
     this.scene.clear()
-    if (this.mode === 'trajectory') this.renderTrajectory()
+    const trajectory = this.mode === 'trajectory'
+    this.scene.visible = trajectory
+    this.dynamicArt?.setVisible(!trajectory)
+    if (trajectory) this.renderTrajectory()
     else this.renderDynamic()
   }
 
   private renderDynamic(): void {
     const frame = frameAt(this.frames, this.currentTimeMs)
-    if (!frame || !this.app) return
-    const width = this.app.screen.width
-    const height = this.app.screen.height
-    this.scene.rect(0, 0, width, height).fill(0x93c96e)
-    const segments = this.visibleSegments(frame)
-    const left: number[] = []
-    const right: number[] = []
-    for (let index = 0; index <= 20; index += 1) {
-      const y = index / 20
-      const center = replayCenterAt(segments, y)
-      left.push((center - this.config.riverWidthRatio / 2) * width, y * height)
-      right.unshift((center + this.config.riverWidthRatio / 2) * width, y * height)
-    }
-    this.scene.poly([...left, ...right]).fill(0x87cfe0)
+    if (!frame || !this.dynamicArt) return
+    const coins: ReplayCoinVisualState[] = []
+    const obstacles: ReplayObstacleVisualState[] = []
     for (const event of this.events) {
       if (event.elapsedMs > this.currentTimeMs) break
       const distance = frame.worldDistance - worldDistanceAt(this.frames, event.elapsedMs)
-      if (event.type === 'coin-spawn') this.drawReplayCoin(event, distance, width, height)
-      if (event.type === 'obstacle-spawn') this.drawReplayObstacle(event, distance, width, height)
+      if (event.type === 'coin-spawn') {
+        const payload = event.payload as CoinSpawnPayload
+        const collected = this.hasEntityEvent('coin-collected', payload.id)
+        const y = payload.y + distance
+        if (!collected && y >= -0.15 && y <= 1.15) coins.push({ id: payload.id, x: payload.x, y, radius: payload.radius })
+      }
+      if (event.type === 'obstacle-spawn') {
+        const payload = event.payload as ObstacleSpawnPayload
+        const y = payload.y + distance
+        if (y >= -0.15 && y <= 1.15) {
+          obstacles.push({ id: payload.id, x: payload.x, y, radius: payload.radius, obstacleType: payload.obstacleType, hit: this.hasEntityEvent('obstacle-hit', payload.id) })
+        }
+      }
     }
-    this.drawBoat(frame.x * width, frame.y * height, Math.min(width, height))
+    const hit = this.events.some((event) => event.type === 'obstacle-hit' && event.elapsedMs <= this.currentTimeMs && this.currentTimeMs < event.elapsedMs + 380)
+    this.dynamicArt.render({ segments: this.visibleSegments(frame), coins, obstacles, boat: frame, elapsedMs: this.currentTimeMs, hit })
   }
 
   private renderTrajectory(): void {
@@ -196,28 +205,16 @@ export class RiverDriftReplayPlayer implements ITrainingReplayPlayer {
       .filter((segment) => segment.y < 1.3 && segment.y + segment.height > -0.3)
   }
 
-  private drawReplayCoin(event: ReplayEvent, distance: number, width: number, height: number): void {
-    const payload = event.payload as CoinSpawnPayload
-    const collected = this.events.some((item) => item.type === 'coin-collected' && item.elapsedMs <= this.currentTimeMs && (item.payload as { id?: string })?.id === payload.id)
-    const y = payload.y + distance
-    if (collected || y < -0.15 || y > 1.15) return
-    this.scene.circle(payload.x * width, y * height, payload.radius * Math.min(width, height)).fill(0xf8d34f).stroke({ width: 2, color: 0xffffff })
+  private hasEntityEvent(type: 'coin-collected' | 'obstacle-hit', id: string): boolean {
+    return this.events.some((event) => event.type === type && event.elapsedMs <= this.currentTimeMs && (event.payload as { id?: string })?.id === id)
   }
 
-  private drawReplayObstacle(event: ReplayEvent, distance: number, width: number, height: number): void {
-    const payload = event.payload as ObstacleSpawnPayload
-    const hit = this.events.some((item) => item.type === 'obstacle-hit' && item.elapsedMs <= this.currentTimeMs && (item.payload as { id?: string })?.id === payload.id)
-    const y = payload.y + distance
-    if (y < -0.15 || y > 1.15) return
-    this.scene.circle(payload.x * width, y * height, payload.radius * Math.min(width, height)).fill(hit ? 0xa7afb5 : 0x6f7c85).stroke({ width: 3, color: 0xe7edf0 })
-  }
-
-  private drawBoat(x: number, y: number, scale: number): void {
-    const size = scale * 0.055
-    this.scene.moveTo(x - size, y).lineTo(x + size, y).lineTo(x + size * 0.65, y + size * 0.75).quadraticCurveTo(x, y + size, x - size * 0.65, y + size * 0.75).closePath().fill(0xf2a33a).stroke({ width: 3, color: 0xffffff })
-    this.scene.arc(x, y - size * 0.1, size * 0.45, Math.PI, Math.PI * 2).fill(0x9fc7df)
-    this.scene.roundRect(x - size * 0.32, y - size * 0.85, size * 0.64, size * 0.45, size * 0.2).fill(0xf4f8fa).stroke({ width: 2, color: 0x7996a9 })
-    this.scene.ellipse(x, y - size * 0.72, size * 0.2, size * 0.08).fill(0x17232d)
+  /** 配置在 load 时才确定，因此动态场景也在此时按记录配置重建。 */
+  private rebuildDynamicArt(): void {
+    if (!this.app) return
+    this.dynamicArt?.destroy()
+    this.dynamicArt = new RiverDriftDynamicReplayArt(this.app, this.config)
+    this.app.stage.addChild(this.scene)
   }
 
   private encounterElapsed(spawnElapsed: number, spawnY: number): number {
@@ -267,13 +264,6 @@ function frameAt(frames: readonly RiverDriftReplayFrame[], elapsedMs: number): R
 }
 
 function worldDistanceAt(frames: readonly RiverDriftReplayFrame[], elapsedMs: number): number { return frameAt(frames, elapsedMs)?.worldDistance ?? 0 }
-
-function replayCenterAt(segments: readonly SegmentSpawnPayload[], y: number): number {
-  const segment = segments.find((item) => y >= item.y && y <= item.y + item.height)
-  if (!segment) return 0.5
-  const ratio = Math.max(0, Math.min(1, (y - segment.y) / Math.max(0.001, segment.height)))
-  return segment.startCenterX + (segment.endCenterX - segment.startCenterX) * ratio
-}
 
 function trajectoryPoint(frame: RiverDriftReplayFrame, duration: number, padding: number, width: number, height: number): { x: number; y: number } {
   return { x: padding + frame.x * width, y: padding + frame.elapsedMs / Math.max(1, duration) * height }
