@@ -71,13 +71,14 @@ function runtimeState(item: DeviceLibraryItem): 'online' | 'connecting' | 'offli
   const state = runtime.value.state
   if (state === 'connected') return 'online'
   if (
-    state === 'connecting' || state === 'scanning' || state === 'discovering' || state === 'subscribing'
+    state === 'connecting' || state === 'scanning' || state === 'discovering' || state === 'subscribing' || state === 'configuring'
     || connection.value.reconnectState === 'reconnecting'
   ) return 'connecting'
   return 'offline'
 }
 function stateText(item: DeviceLibraryItem): string {
   if (!isBound(item)) return '未连接'
+  if (runtime.value.state === 'configuring') return '设备初始化中…'
   const state = runtimeState(item)
   if (state === 'online') return '在线'
   if (state === 'connecting') return '连接中…'

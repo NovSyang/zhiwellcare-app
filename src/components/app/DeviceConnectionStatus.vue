@@ -10,12 +10,14 @@ const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: fals
 const snapshot = ref<SensorRuntimeSnapshot>({ state: 'idle', frame: null, gameInput: { x: 0, y: 0, connected: false, calibrated: false, timestamp: 0 }, rateHz: 0, rawHex: '', battery: createEmptyBatteryState() })
 const connection = ref<SensorConnectionSnapshot>(connectionManager.getSnapshot())
 const connected = computed(() => snapshot.value.state === 'connected')
+const configuring = computed(() => snapshot.value.state === 'configuring')
 const batteryText = computed(() => snapshot.value.battery.percent === null ? '--%' : `${snapshot.value.battery.percent}%`)
 const batteryFillPercent = computed(() => getBatteryFillPercent(snapshot.value.battery.percent))
 const batteryLow = computed(() => isLowBatteryPercent(snapshot.value.battery.percent))
 const batteryAriaLabel = computed(() => snapshot.value.battery.percent === null ? '设备电量读取中' : `设备电量 ${snapshot.value.battery.percent}%`)
 // Compact 模式仍通过完整标签向辅助技术说明连接状态与电量。
 const statusAriaLabel = computed(() => {
+  if (configuring.value) return '设备初始化中'
   if (!connected.value) return '设备未连接'
   return snapshot.value.battery.percent === null
     ? '设备已连接，电量读取中'
@@ -64,7 +66,7 @@ async function forget(): Promise<void> {
       >
         <span class="status-dot"></span>
         <!-- 已连接时省略重复文案；断线时必须保留明确提示。 -->
-        <span v-if="!props.compact || !connected">{{ connected ? '设备已连接' : props.compact ? '未连接' : '设备未连接' }}</span>
+        <span v-if="!props.compact || !connected">{{ connected ? '设备已连接' : configuring ? '设备初始化中…' : props.compact ? '未连接' : '设备未连接' }}</span>
         <span
           v-if="connected"
           class="battery-status"

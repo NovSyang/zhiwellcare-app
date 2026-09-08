@@ -4,12 +4,14 @@ export interface SensorDevice {
   address?: string
 }
 
+/** configuring 表示 BLE 已建立，但设备参数尚未通过业务初始化校验。 */
 export type SensorConnectionState =
   | 'idle'
   | 'scanning'
   | 'connecting'
   | 'discovering'
   | 'subscribing'
+  | 'configuring'
   | 'connected'
   | 'disconnected'
   | 'error'

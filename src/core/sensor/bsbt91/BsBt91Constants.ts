@@ -10,9 +10,16 @@ export const BS_BT91 = {
 
 /** 厂家协议已确认的寄存器地址，业务层不直接散落魔法数字。 */
 export const BS_BT91_REGISTER = {
+  save: 0x00,
+  rate: 0x03,
   battery: 0x64,
   version: 0x2e,
   quaternion: 0x51,
   magnetic: 0x3a,
   temperature: 0x40,
+} as const
+
+/** RATE 寄存器的厂家枚举值；0x08 表示每秒回传 50 帧。 */
+export const BS_BT91_OUTPUT_RATE = {
+  hz50: 0x08,
 } as const

@@ -16,6 +16,7 @@ const scanning = ref(false)
 const busy = ref(false)
 const errorMessage = ref('')
 const connected = computed(() => snapshot.value.state === 'connected')
+const configuring = computed(() => snapshot.value.state === 'configuring')
 let unsubscribe: (() => void) | null = null
 
 // 面板只调用连接管理器，避免页面分别管理扫描、绑定和底层连接。
@@ -51,4 +52,4 @@ async function connect(): Promise<void> {
 function setError(error: unknown): void { errorMessage.value = error instanceof Error ? error.message : String(error); emit('error', errorMessage.value) }
 </script>
 
-<template><section class="card device-connection-panel"><template v-if="connected && mode === 'initial'"><p class="success-text">训练设备已连接</p><button class="button primary" @click="emit('connected')">继续</button></template><template v-else><p class="muted">{{ mode === 'replace' ? '请选择要替换为的新训练设备。' : '请选择并连接用于训练的设备。' }}</p><div class="row"><button class="button" :disabled="scanning || busy" @click="scan">{{ scanning ? '搜索设备中…' : '扫描设备' }}</button></div><select v-model="selectedDeviceId" class="select"><option value="">请选择设备</option><option v-for="device in devices" :key="device.id" :value="device.id">{{ device.name }} · {{ device.address || device.id }}</option></select><button class="button primary wide" :disabled="!selectedDeviceId || busy" @click="connect">{{ busy ? '连接中…' : mode === 'replace' ? '连接此设备' : '连接并继续' }}</button></template><p v-if="errorMessage" class="error">{{ errorMessage }}</p></section></template>
+<template><section class="card device-connection-panel"><template v-if="connected && mode === 'initial'"><p class="success-text">训练设备已连接</p><button class="button primary" @click="emit('connected')">继续</button></template><template v-else><p class="muted">{{ configuring ? '设备初始化中，请稍候…' : mode === 'replace' ? '请选择要替换为的新训练设备。' : '请选择并连接用于训练的设备。' }}</p><div class="row"><button class="button" :disabled="scanning || busy || configuring" @click="scan">{{ scanning ? '搜索设备中…' : '扫描设备' }}</button></div><select v-model="selectedDeviceId" class="select" :disabled="configuring"><option value="">请选择设备</option><option v-for="device in devices" :key="device.id" :value="device.id">{{ device.name }} · {{ device.address || device.id }}</option></select><button class="button primary wide" :disabled="!selectedDeviceId || busy || configuring" @click="connect">{{ configuring ? '设备初始化中…' : busy ? '连接中…' : mode === 'replace' ? '连接此设备' : '连接并继续' }}</button></template><p v-if="errorMessage" class="error">{{ errorMessage }}</p></section></template>
