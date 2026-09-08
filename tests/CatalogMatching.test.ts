@@ -55,7 +55,7 @@ describe('目录源与目录服务（Mock）', () => {
   it('listModelGames 只返回姿态类游戏给不倒翁，力矩底座暂无可用游戏', async () => {
     const source = new MockCatalogSource()
     const wobbleGames = await source.listModelGames('wobble-wrist-band')
-    expect(wobbleGames.map((game) => game.gameId).sort()).toEqual(['target-reach', 'trajectory-follow'])
+    expect(wobbleGames.map((game) => game.gameId).sort()).toEqual(['river-drift', 'target-reach', 'trajectory-follow'])
     expect(await source.listModelGames('desk-torque-base')).toEqual([])
   })
 
@@ -64,15 +64,16 @@ describe('目录源与目录服务（Mock）', () => {
     const profile = await service.getDeviceGameProfile(mockCatalog.deviceModels[1])
     expect(profile).not.toBeNull()
     expect(profile!.games).toEqual([])
-    // 桌面底座面对两款姿态游戏均缺失姿态传感标签。
-    expect(profile!.unavailableGames).toHaveLength(2)
+    // 桌面底座面对三款姿态游戏均缺失姿态传感标签。
+    expect(profile!.unavailableGames).toHaveLength(3)
     expect(profile!.unavailableGames[0].missingTags).toEqual([DeviceCapabilityTag.PostureSensor])
   })
 
   it('listGamesWithModels 为每款游戏标注兼容设备名', async () => {
     const service = new CatalogService(new MockCatalogSource())
     const items = await service.listGamesWithModels()
-    expect(items.length).toBe(2)
+    expect(items.length).toBe(3)
     expect(items[0].compatibleModels).toContain('不倒翁手腕训练仪')
+    expect(items.find((item) => item.gameId === 'river-drift')?.durationPresetsMin).toEqual([1.5])
   })
 })

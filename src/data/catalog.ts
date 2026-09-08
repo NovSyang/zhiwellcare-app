@@ -66,5 +66,18 @@ export const mockCatalog: CatalogSnapshot = {
       categoryLabel: '腕部控制',
       playMode: 'active-force',
     },
+    {
+      gameId: 'river-drift',
+      name: '森林溪谷漂流',
+      summary: '控制康复小船沿溪流前进，收集金币并避开障碍，训练腕部连续方向控制与协调能力。',
+      requiredTags: [DeviceCapabilityTag.PostureSensor],
+      // 当前版本固定训练 90 秒，因此目录只展示一个 1.5 分钟预设。
+      durationPresetsMin: [1.5],
+      resourceVersion: '1.0.0',
+      resourceUrl: '',
+      status: 'on',
+      categoryLabel: '腕部协调',
+      playMode: 'active-force',
+    },
   ],
 }
