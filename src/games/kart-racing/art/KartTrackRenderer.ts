@@ -5,6 +5,21 @@ import { kartTrackCenterOffset } from '../KartRacingTrack'
 import { kartDepthToScreenY, kartRoadHalfWidthAtDepth } from './KartPerspective'
 import { kartColors } from './KartVisualStyle'
 
+/** 前景道路的纯几何数据，便于在不依赖 Pixi 内部命令的情况下测试。 */
+export interface KartForegroundRoadGeometry {
+  topY: number
+  bottomY: number
+  center: number
+  topHalfWidth: number
+  bottomHalfWidth: number
+  topLeft: number
+  topRight: number
+  bottomLeft: number
+  bottomRight: number
+  topCurb: number
+  bottomCurb: number
+}
+
 /** 通过离散横条绘制弯曲道路、路肩、标线和固定终点。 */
 export class KartTrackRenderer {
   private graphic = new Graphics({ label: 'kart-track' })
@@ -43,12 +58,49 @@ export class KartTrackRenderer {
           .fill({ color: kartColors.roadLine, alpha: 0.72 })
       }
     }
+    this.drawForegroundRoad(graphic, viewport, track, kartDistance)
     this.drawFinishLine(graphic, viewport, track, kartDistance, trackLength, visibleDistance)
     this.drawGuardRails(graphic, viewport, track, kartDistance, visibleDistance)
   }
 
   destroy(): void {
     this.graphic.destroy()
+  }
+
+  /** 将道路从玩家逻辑平面继续延伸到画面近端。 */
+  private drawForegroundRoad(
+    graphic: Graphics,
+    viewport: KartRacingViewport,
+    track: readonly KartTrackSegment[],
+    kartDistance: number,
+  ): void {
+    const geometry = createKartForegroundRoadGeometry(viewport, track, kartDistance)
+    const stripe = Math.floor(kartDistance / 12)
+    const roadColor = stripe % 2 === 0 ? kartColors.road : kartColors.roadShade
+    const curbColor = stripe % 2 === 0 ? kartColors.curbWhite : kartColors.curbRed
+    graphic.poly([
+      geometry.topLeft - geometry.topCurb, geometry.topY,
+      geometry.topRight + geometry.topCurb, geometry.topY,
+      geometry.bottomRight + geometry.bottomCurb, geometry.bottomY,
+      geometry.bottomLeft - geometry.bottomCurb, geometry.bottomY,
+    ]).fill(curbColor)
+    graphic.poly([
+      geometry.topLeft, geometry.topY,
+      geometry.topRight, geometry.topY,
+      geometry.bottomRight, geometry.bottomY,
+      geometry.bottomLeft, geometry.bottomY,
+    ]).fill(roadColor)
+    // 沿用透视道路的稀疏规则，让中心线在玩家附近自然衔接。
+    if (stripe % 3 !== 1) {
+      const topLine = Math.max(1, geometry.topHalfWidth * 0.018)
+      const bottomLine = Math.max(1, geometry.bottomHalfWidth * 0.018)
+      graphic.poly([
+        geometry.center - topLine, geometry.topY,
+        geometry.center + topLine, geometry.topY,
+        geometry.center + bottomLine, geometry.bottomY,
+        geometry.center - bottomLine, geometry.bottomY,
+      ]).fill({ color: kartColors.roadLine, alpha: 0.72 })
+    }
   }
 
   private drawFinishLine(
@@ -92,6 +144,29 @@ export class KartTrackRenderer {
       graphic.rect(edge.left - edge.curb - 3, edge.y - height, 4 + depth * 5, height).fill(0xf5f7f8)
       graphic.rect(edge.right + edge.curb - 1, edge.y - height, 4 + depth * 5, height).fill(0xf5f7f8)
     }
+  }
+}
+
+/** 近端保持当前道路中心，只轻微扩宽道路，避免弯道在镜头前斜切。 */
+export function createKartForegroundRoadGeometry(
+  viewport: KartRacingViewport,
+  track: readonly KartTrackSegment[],
+  kartDistance: number,
+): KartForegroundRoadGeometry {
+  const near = roadEdge(viewport, track, kartDistance, 0, 1)
+  const bottomHalfWidth = Math.min(viewport.width * 0.49, near.halfWidth * 1.06)
+  return {
+    topY: near.y,
+    bottomY: viewport.roadBottomY,
+    center: near.center,
+    topHalfWidth: near.halfWidth,
+    bottomHalfWidth,
+    topLeft: near.left,
+    topRight: near.right,
+    bottomLeft: near.center - bottomHalfWidth,
+    bottomRight: near.center + bottomHalfWidth,
+    topCurb: near.curb,
+    bottomCurb: Math.max(near.curb, bottomHalfWidth * 0.065),
   }
 }
 

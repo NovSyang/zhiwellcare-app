@@ -27,6 +27,16 @@ export function kartRoadHalfWidthAtDepth(depth: number, viewport: KartRacingView
   return viewport.width * (0.055 + Math.pow(clamp(depth, 0, 1), 1.08) * 0.40)
 }
 
+/** 玩家平面的道路宽度与世界实体的近端投影使用同一公式。 */
+export function kartPlayerRoadHalfWidth(viewport: KartRacingViewport): number {
+  return kartRoadHalfWidthAtDepth(1, viewport)
+}
+
+/** 为车体边缘保留少量路面，避免最大转向时贴到路肩。 */
+export function kartPlayerLateralHalfWidth(viewport: KartRacingViewport): number {
+  return kartPlayerRoadHalfWidth(viewport) * 0.88
+}
+
 export function kartEntityScaleAtDepth(depth: number): number {
   return 0.18 + Math.pow(clamp(depth, 0, 1), 1.35) * 0.92
 }

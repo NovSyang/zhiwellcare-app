@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { distanceToKartDepth, kartDepthToScreenY, kartEntityScaleAtDepth, projectKartEntity } from '../src/games/kart-racing/art/KartPerspective'
+import {
+  distanceToKartDepth,
+  kartDepthToScreenY,
+  kartEntityScaleAtDepth,
+  kartPlayerLateralHalfWidth,
+  kartPlayerRoadHalfWidth,
+  projectKartEntity,
+} from '../src/games/kart-racing/art/KartPerspective'
 import { createDefaultKartTrack } from '../src/games/kart-racing/KartRacingTrack'
 import { createKartRacingViewport } from '../src/games/kart-racing/KartRacingViewport'
 
@@ -26,5 +33,16 @@ describe('KartPerspective', () => {
       expect(projection.screenY).toBeGreaterThanOrEqual(0)
       expect(projection.screenY).toBeLessThanOrEqual(height)
     }
+  })
+
+  it('世界实体和玩家横向定位共享玩家平面的道路宽度', () => {
+    const viewport = createKartRacingViewport(1280, 720)
+    const track = createDefaultKartTrack(1_000)
+    const projection = projectKartEntity({ entityDistance: 100, entityLateral: 0, kartDistance: 100, visibleDistance: 90, track, viewport })
+    // 实体到达玩家时仍停在 kartY，不会跟随视觉道路延伸到底部。
+    expect(kartDepthToScreenY(1, viewport)).toBeCloseTo(viewport.kartY, 8)
+    expect(projection.screenY).toBeCloseTo(viewport.kartY, 8)
+    expect(projection.roadHalfWidth).toBeCloseTo(kartPlayerRoadHalfWidth(viewport), 8)
+    expect(kartPlayerLateralHalfWidth(viewport)).toBeCloseTo(projection.roadHalfWidth * 0.88, 8)
   })
 })

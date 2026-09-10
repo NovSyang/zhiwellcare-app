@@ -7,7 +7,7 @@ import type { KartTrackSegment } from '../KartRacingTrack'
 import type { KartRacingViewport } from '../KartRacingViewport'
 import type { KartCoin, KartItem, KartObstacle, KartWorldEntity } from '../KartRacingWorld'
 import { KartEnvironmentRenderer } from './KartEnvironmentRenderer'
-import { projectKartEntity } from './KartPerspective'
+import { kartPlayerLateralHalfWidth, projectKartEntity } from './KartPerspective'
 import { KartSpritePool } from './KartSpritePool'
 import { KartTrackRenderer } from './KartTrackRenderer'
 import { createKartSprite, createKartTextureSet, createKartVisual, type KartTextureSet, type KartVisual } from './KartVisualFactory'
@@ -209,7 +209,7 @@ export class KartRacingArt {
     const braking = Math.max(0, -state.gameInput.y)
     const hit = state.elapsedMs < this.hitShakeUntilMs
     const shake = hit ? Math.sin(state.elapsedMs * 0.12) * 5 : 0
-    const roadHalfWidth = state.viewport.width * 0.40
+    const roadHalfWidth = kartPlayerLateralHalfWidth(state.viewport)
     const scale = state.viewport.scale / 720
     this.kart.root.position.set(state.viewport.width / 2 + state.kart.lateral * roadHalfWidth + shake, state.viewport.kartY + throttle * 4 - braking * 3)
     this.kart.root.scale.set(scale)
@@ -275,7 +275,8 @@ export class KartRacingArt {
   private spawnBurstAtKart(count: number, color: number): void {
     const state = this.lastState
     if (!state) return
-    this.activateBurst(state.viewport.width / 2 + state.kart.lateral * state.viewport.width * 0.40, state.viewport.kartY, count, color)
+    const roadHalfWidth = kartPlayerLateralHalfWidth(state.viewport)
+    this.activateBurst(state.viewport.width / 2 + state.kart.lateral * roadHalfWidth, state.viewport.kartY, count, color)
   }
 
   private spawnBurstAtEntity(entity: KartWorldEntity, count: number, color: number): void {
