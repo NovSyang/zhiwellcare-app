@@ -1,4 +1,3 @@
-import { ref } from 'vue'
 import type { ICatalogSource } from './ICatalogSource'
 import { MockCatalogSource } from './MockCatalogSource'
 import { HttpCatalogSource } from './HttpCatalogSource'
@@ -10,12 +9,6 @@ import type {
 } from './DeviceCatalogTypes'
 import { missingTags, tagsSatisfy } from './tagMatching'
 import type { MatchTag } from './CapabilityTags'
-
-/** 目录源当前状态：UI 可据此展示“本地目录 / 后端目录 / 后端不可用回退本地”。 */
-export const catalogSourceStatus = ref<{
-  kind: 'mock' | 'http' | 'http-fallback-mock'
-  message: string
-}>({ kind: 'mock', message: '本地目录' })
 
 /** 运行时目录源工厂：VITE_CATALOG_MODE=http 时连接 Golang 后端，失败自动回退本地。 */
 export function createCatalogSource(): ICatalogSource {
@@ -88,22 +81,12 @@ export class CatalogService {
 
   private async fetchSnapshotWithFallback(): Promise<CatalogSnapshot> {
     try {
-      const snapshot = await this.source.loadSnapshot()
-      catalogSourceStatus.value = {
-        kind: this.source.kind,
-        message: this.source.kind === 'http' ? '后端目录' : '本地目录',
-      }
-      return snapshot
+      return await this.source.loadSnapshot()
     } catch (error) {
-      // 后端未就绪/网络失败时回退本地目录，保证设备首页与游戏大厅永远可用。
+      // 来源状态不再展示给用户，但后端失败时仍自动使用内置目录，保证核心页面可用。
       if (this.source.kind === 'http') {
         const mock = new MockCatalogSource()
-        const snapshot = await mock.loadSnapshot()
-        catalogSourceStatus.value = {
-          kind: 'http-fallback-mock',
-          message: error instanceof Error ? `后端目录不可用，已回退本地：${error.message}` : '后端目录不可用，已回退本地',
-        }
-        return snapshot
+        return await mock.loadSnapshot()
       }
       throw error
     }

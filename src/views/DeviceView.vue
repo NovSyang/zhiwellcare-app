@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { catalogService, connectionManager, sensorService, syncActiveDeviceToLibrary } from '../app/AppServices'
 import { useDeviceLibraryStore, type DeviceLibraryItem } from '../stores/deviceLibrary'
-import { catalogSourceStatus } from '../core/catalog/CatalogService'
 import type { DeviceModelInfo } from '../core/catalog/DeviceCatalogTypes'
 import { tagLabel, type MatchTag } from '../core/catalog/CapabilityTags'
 import type { SensorDevice } from '../core/sensor/SensorDevice'
@@ -45,12 +44,6 @@ let unsubscribeConnection: (() => void) | null = null
 const modelById = computed(() => new Map(models.value.map((model) => [model.modelId, model] as const)))
 const activeDialog = computed(() => dialog.value?.kind ?? 'none')
 const dialogItem = computed(() => dialog.value?.item ?? null)
-const catalogLabel = computed(() => {
-  const kind = catalogSourceStatus.value.kind
-  if (kind === 'http') return '后端目录'
-  if (kind === 'http-fallback-mock') return '本地目录（后端回退）'
-  return '本地目录'
-})
 
 function modelOf(item: DeviceLibraryItem): DeviceModelInfo | null {
   return modelById.value.get(item.modelId) ?? null
@@ -197,9 +190,6 @@ function formatError(error: unknown): string {
         <p class="eyebrow">Device Hub</p>
         <h1>设备首页</h1>
         <p>连接智为康乐智能训练设备，自动解锁适配游戏。</p>
-        <div class="hero-tags">
-          <span class="hero-tag" :title="catalogSourceStatus.message">{{ catalogLabel }}</span>
-        </div>
       </div>
       <button type="button" class="button hero-games-btn" @click="goGames">全部游戏<span class="hero-games-arrow" aria-hidden="true">→</span></button>
     </section>
@@ -299,7 +289,6 @@ function formatError(error: unknown): string {
       <div class="compliance-copy">
         <p><strong>消费级健身设备：</strong>本设备为面向大众的消费级主动训练硬件，无电机、无被动驱动，每次训练都由你主动发力完成。</p>
         <p><strong>产品定位：</strong>仅用于日常健身与锻炼，非医疗用途产品，不做疾病防治相关功能；如有健康疑问请咨询专业人士，训练请量力而行。</p>
-        <p class="small">目录来源：{{ catalogLabel }} —— 设备型号与游戏目录由智为康乐服务端下发，服务端不可用时自动回退本地目录。</p>
       </div>
     </section>
 
@@ -318,7 +307,6 @@ function formatError(error: unknown): string {
 /* 页头 */
 .device-hero { display: flex; align-items: center; justify-content: space-between; gap: 18px; flex-wrap: wrap; margin-bottom: 0; }
 .device-hero-copy { flex: 1; min-width: min(280px, 100%); }
-.device-hero .hero-tags { margin-top: 10px; }
 .hero-games-btn {
   flex: 0 0 auto;
   background: rgba(255, 255, 255, .96);

@@ -73,6 +73,3 @@ export interface CatalogSnapshot {
   deviceModels: DeviceModelInfo[]
   games: GameCatalogEntry[]
 }
-
-/** 目录源来源标识（UI 展示“本地目录 / 后端目录”）。 */
-export type CatalogSourceKind = 'mock' | 'http'

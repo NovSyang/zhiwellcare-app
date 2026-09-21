@@ -8,7 +8,6 @@ import {
   resolveCurrentDeviceModel,
   sensorService,
 } from '../app/AppServices'
-import { catalogSourceStatus } from '../core/catalog/CatalogService'
 import { tagLabel, type MatchTag } from '../core/catalog/CapabilityTags'
 import { describeMissingTags } from '../core/catalog/tagMatching'
 import type { DeviceGameProfile, DeviceModelInfo, GameCatalogEntry } from '../core/catalog/DeviceCatalogTypes'
@@ -40,18 +39,6 @@ const profile = ref<DeviceGameProfile | null>(null)
 const rangeReady = ref(false)
 
 const routeError = computed(() => (route.query.error === 'game-unavailable' ? '该训练游戏不存在或尚未开放。' : ''))
-
-/** 目录源徽标：本地目录 / 后端目录 / 后端不可用已回退本地。 */
-const sourceKindLabel = computed(() => {
-  switch (catalogSourceStatus.value.kind) {
-    case 'http':
-      return '后端目录'
-    case 'http-fallback-mock':
-      return '已回退本地目录'
-    default:
-      return '本地目录'
-  }
-})
 
 /** 无激活设备 / 设备未连接时的顶部引导条。 */
 const heroBanner = computed<{ text: string; cta: string } | null>(() => {
@@ -194,9 +181,9 @@ function coverGlyph(name: string): string {
     <header class="page-hero">
       <p class="eyebrow">训练中心</p>
       <h1>训练游戏</h1>
-      <p>连接设备后自动过滤适配游戏；新增设备与游戏由后端目录动态下发（本地演示目录模式）</p>
-      <div class="hero-tags">
-        <span class="hero-tag" :title="catalogSourceStatus.message">{{ sourceKindLabel }}</span>
+      <p>连接设备后自动过滤适配游戏；新增设备与游戏由后端目录动态下发。</p>
+      <!-- 仅在存在设备状态标签时渲染容器，避免未连接页面留下空白区域。 -->
+      <div v-if="connected" class="hero-tags">
         <span v-if="connected && activeModel" class="hero-tag">设备：{{ activeModel.name }}</span>
         <span v-if="connected && !rangeReady" class="hero-tag">未完成个人活动范围测量</span>
       </div>

@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { reportService, trainingRepository } from '../../app/AppServices'
-import { catalogSourceStatus } from '../../core/catalog/CatalogService'
 import type { TrainingRecord } from '../../core/training/TrainingRecord'
 import { useAuthStore } from '../../stores/auth'
 
@@ -132,7 +131,6 @@ function formatError(error: unknown): string { return error instanceof Error ? e
 
       <footer class="mine-footer">
         <p class="muted small">智为康乐 ZhiWellCare · v0.1.0</p>
-        <p class="muted small">设备-训练目录：{{ catalogSourceStatus.message }}</p>
       </footer>
     </div>
   </main>
