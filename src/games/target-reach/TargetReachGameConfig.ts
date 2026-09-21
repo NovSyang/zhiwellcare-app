@@ -7,6 +7,7 @@ export interface TargetReachGameConfig {
   targetRadius: number
   playerRadius: number
   holdTimeMs: number
+  successFeedbackMs: number
   targetTimeoutMs: number
   movementThreshold: number
   enabledDirections: Direction[]
@@ -20,6 +21,7 @@ export const defaultTargetReachGameConfig: TargetReachGameConfig = {
   targetRadius: 0.16,
   playerRadius: 22,
   holdTimeMs: 300,
+  successFeedbackMs: 250,
   targetTimeoutMs: 8_000,
   movementThreshold: 0.08,
   enabledDirections: [...ALL_DIRECTIONS],

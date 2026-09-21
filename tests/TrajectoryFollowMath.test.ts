@@ -13,10 +13,13 @@ describe('TrajectoryFollowMath', () => {
     expect(Math.max(...samples.map((sample) => Math.abs(sample.y)))).toBeLessThanOrEqual(0.45)
   })
 
-  it('一个周期后回到中心，并可插值读取参考点', () => {
-    const point = getTrajectoryPoint(12_000, defaultTrajectoryFollowGameConfig)
-    expect(Math.abs(point.x)).toBeLessThan(1e-10)
-    expect(Math.abs(point.y)).toBeLessThan(1e-10)
+  it('默认 20 秒一圈，60 秒完整运行三圈并回到中心', () => {
+    expect(defaultTrajectoryFollowGameConfig.cycleDurationMs).toBe(20_000)
+    for (const elapsedMs of [20_000, 40_000, 60_000]) {
+      const point = getTrajectoryPoint(elapsedMs, defaultTrajectoryFollowGameConfig)
+      expect(Math.abs(point.x)).toBeLessThan(1e-10)
+      expect(Math.abs(point.y)).toBeLessThan(1e-10)
+    }
     const samples = createReferenceSamples({ ...defaultTrajectoryFollowGameConfig, sessionDurationMs: 100, referenceSampleIntervalMs: 100 })
     expect(getReferenceAt(samples, 50)?.elapsedMs).toBe(50)
   })

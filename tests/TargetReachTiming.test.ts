@@ -1,18 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GameInput } from '../src/core/game-input/GameInput'
 import { TrainingSession } from '../src/core/training/TrainingSession'
-import type { TargetAttemptResult } from '../src/games/target-reach/TargetReachTrainingResult'
+import type { TargetAttemptResult, TargetReachTrainingResult } from '../src/games/target-reach/TargetReachTrainingResult'
 import { TargetReachGame } from '../src/games/target-reach/TargetReachGame'
 import type { TargetReachGameConfig } from '../src/games/target-reach/TargetReachGameConfig'
 import type { TargetReachReplayEvent } from '../src/games/target-reach/replay/TargetReachReplayEvent'
 
 const config: TargetReachGameConfig = {
   sessionDurationMs: 60_000, targetCount: 20, targetDistance: 0.7, targetRadius: 0.2,
-  playerRadius: 20, holdTimeMs: 300, targetTimeoutMs: 8000, movementThreshold: 0.08,
+  playerRadius: 20, holdTimeMs: 300, successFeedbackMs: 250, targetTimeoutMs: 8000, movementThreshold: 0.08,
   enabledDirections: ['right'],
 }
 const neutral = (timestamp: number): GameInput => ({ x: 0, y: 0, connected: true, calibrated: true, timestamp })
 const onTarget = (timestamp: number): GameInput => ({ x: 0.7, y: 0, connected: true, calibrated: true, timestamp })
+const disconnected = (timestamp: number): GameInput => ({ x: 0.7, y: 0, connected: false, calibrated: false, timestamp })
 
 interface GameInternals {
   session: TrainingSession
@@ -29,6 +30,8 @@ function createPlayingGame(): { game: TargetReachGame; internals: GameInternals 
   internals.update(1) // 生成第一个固定向右目标。
   return { game, internals }
 }
+
+afterEach(() => vi.restoreAllMocks())
 
 describe('TargetReachGame 暂停计时', () => {
   it('无暂停时以有效训练时间记录反应与到达时间', () => {
@@ -64,6 +67,64 @@ describe('TargetReachGame 暂停计时', () => {
     expect(internals.attempts).toHaveLength(0)
     internals.update(11_000)
     expect(internals.attempts).toHaveLength(1)
+  })
+
+  it('Hold 中断线会自动暂停并清空进度，重连后重新累计', () => {
+    const { game, internals } = createPlayingGame()
+    game.setInput(onTarget(101)); internals.update(101)
+    vi.spyOn(performance, 'now').mockReturnValue(151)
+    game.setInput(disconnected(151))
+    expect(internals.session.getSnapshot(999).state).toBe('paused')
+
+    game.setInput(onTarget(1_000)); game.resume(1_000); internals.update(1_000)
+    internals.update(1_299)
+    expect(internals.attempts).toHaveLength(0)
+    internals.update(1_300)
+    expect(internals.attempts).toHaveLength(1)
+  })
+
+  it('离开目标会清空保持进度，再次进入后重新累计完整 300ms', () => {
+    const { game, internals } = createPlayingGame()
+    game.setInput(onTarget(101)); internals.update(101)
+    internals.update(250)
+    game.setInput(neutral(251)); internals.update(251)
+    game.setInput(onTarget(300)); internals.update(300)
+    internals.update(599)
+    expect(internals.attempts).toHaveLength(0)
+    internals.update(600)
+    expect(internals.attempts).toHaveLength(1)
+  })
+
+  it('成功后保留 250ms 完成反馈，期间不重复计分或生成新目标', () => {
+    const events: TargetReachReplayEvent[] = []
+    const game = new TargetReachGame(config, { onReplayEvent: (event) => events.push(event) })
+    const internals = game as unknown as GameInternals
+    internals.session.start(1, 0)
+    game.setInput(neutral(1)); internals.update(1)
+    game.setInput(onTarget(101)); internals.update(101); internals.update(401)
+
+    expect(internals.attempts).toHaveLength(1)
+    expect(events.map((event) => event.type)).toEqual(['target-start', 'target-success'])
+    internals.update(650)
+    expect(internals.attempts).toHaveLength(1)
+    expect(events.map((event) => event.type)).toEqual(['target-start', 'target-success'])
+
+    internals.update(651)
+    expect(events.map((event) => event.type)).toEqual(['target-start', 'target-success', 'target-start'])
+  })
+
+  it('最后一个目标也先展示完成反馈，再结束整局', () => {
+    const completed: TargetReachTrainingResult[] = []
+    const game = new TargetReachGame({ ...config, targetCount: 1 }, { onCompleted: (result) => completed.push(result) })
+    const internals = game as unknown as GameInternals
+    internals.session.start(1, 0)
+    game.setInput(neutral(1)); internals.update(1)
+    game.setInput(onTarget(101)); internals.update(101); internals.update(401)
+    expect(completed).toHaveLength(0)
+    internals.update(650)
+    expect(completed).toHaveLength(0)
+    internals.update(651)
+    expect(completed).toHaveLength(1)
   })
 
   it('长时间暂停不消耗单目标超时时间，连续暂停后数据仍非负', () => {

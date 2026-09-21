@@ -9,7 +9,7 @@ import {
   type TargetReachGameConfig,
 } from './TargetReachGameConfig'
 import type { TargetReachGameEvents } from './TargetReachGameEvents'
-import { distanceBetween, getTargetPosition } from './TargetReachMath'
+import { distanceBetween, getTargetHoldProgress, getTargetPosition } from './TargetReachMath'
 import {
   createTargetReachViewport,
   getPlayerRadiusPx,
@@ -29,6 +29,7 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
   private latestInput: GameInput = emptyGameInput()
   private player: Graphics | null = null
   private target: Graphics | null = null
+  private targetProgress: Graphics | null = null
   private countdownText: Text | null = null
   private directionText: Text | null = null
   private resizeObserver: ResizeObserver | null = null
@@ -38,6 +39,7 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
   private firstMovementAt: number | null = null
   private currentReactionTimeMs: number | null = null
   private targetHoldStartedElapsedMs: number | null = null
+  private targetSuccessFeedbackStartedElapsedMs: number | null = null
   private currentMaxInput = 0
   private attempts: TargetAttemptResult[] = []
   private lastNotifiedState: TrainingSessionState = 'idle'
@@ -63,17 +65,20 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
     // 玩家球和目标圈的半径取决于最终视口，首次 render 时再绘制。
     const player = new Graphics()
     const target = new Graphics()
+    const targetProgress = new Graphics()
     const countdownText = new Text({ text: '', style: { fill: '#ffffff', fontSize: 72, fontWeight: '700' } })
     const directionText = new Text({ text: '', style: { fill: '#8fd8ff', fontSize: 22, fontWeight: '600' } })
     countdownText.anchor.set(0.5)
     directionText.anchor.set(0.5)
     target.visible = false
+    targetProgress.visible = false
     directionText.visible = false
-    app.stage.addChild(target, player, directionText, countdownText)
+    app.stage.addChild(target, targetProgress, player, directionText, countdownText)
 
     this.app = app
     this.player = player
     this.target = target
+    this.targetProgress = targetProgress
     this.countdownText = countdownText
     this.directionText = directionText
     // 容器旋转或分屏后重新按最新 screen 计算目标、玩家和倒计时位置。
@@ -97,9 +102,8 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
     if (!this.latestInput.calibrated) throw new Error('开始训练前必须完成中心校准')
 
     this.attempts = []
-    this.currentDirection = null
+    this.clearCurrentTarget()
     this.currentReactionTimeMs = null
-    this.targetHoldStartedElapsedMs = null
     this.session.start(performance.now(), 3000)
     this.notifySessionState()
   }
@@ -126,7 +130,7 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
 
   abort(): void {
     this.session.abort(performance.now())
-    if (this.target) this.target.visible = false
+    this.clearCurrentTarget()
     if (this.directionText) this.directionText.visible = false
     this.notifySessionState()
   }
@@ -138,6 +142,7 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
     this.app = null
     this.player = null
     this.target = null
+    this.targetProgress = null
     this.countdownText = null
     this.directionText = null
     this.renderedInteractionScale = -1
@@ -149,6 +154,12 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
     const snapshot = this.session.getSnapshot(now)
     if (snapshot.state === 'countdown' || snapshot.state !== 'playing') return
 
+    // 成功计分后保留完整圆环一小段时间，期间不再处理输入或生成目标。
+    if (this.targetSuccessFeedbackStartedElapsedMs !== null) {
+      const feedbackElapsedMs = snapshot.playingElapsedMs - this.targetSuccessFeedbackStartedElapsedMs
+      if (feedbackElapsedMs < this.getSuccessFeedbackDurationMs()) return
+      this.clearCurrentTarget()
+    }
     if (snapshot.playingElapsedMs >= this.config.sessionDurationMs || this.attempts.length >= this.config.targetCount) {
       this.complete(now)
       return
@@ -171,6 +182,7 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
     this.firstMovementAt = null
     this.currentReactionTimeMs = null
     this.targetHoldStartedElapsedMs = null
+    this.targetSuccessFeedbackStartedElapsedMs = null
     this.currentMaxInput = 0
     if (this.target) this.target.visible = true
     this.events.onTargetChanged?.(this.currentDirection, this.attempts.length + 1)
@@ -231,16 +243,20 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
       type: success ? 'target-success' : 'target-failed',
       payload: { index: this.attempts.length },
     })
-    this.currentDirection = null
     this.targetHoldStartedElapsedMs = null
-    if (this.target) this.target.visible = false
+    if (success && this.getSuccessFeedbackDurationMs() > 0) {
+      // 使用有效训练时间计时，断线或暂停不会悄悄消耗完整圆环的展示时间。
+      this.targetSuccessFeedbackStartedElapsedMs = this.session.getSnapshot(now).playingElapsedMs
+    } else {
+      this.clearCurrentTarget()
+    }
     const successCount = this.attempts.filter((attempt) => attempt.success).length
     this.events.onScoreChanged?.(successCount, this.attempts.length)
   }
 
   private complete(now: number): void {
     this.session.complete(now)
-    if (this.target) this.target.visible = false
+    this.clearCurrentTarget()
     if (this.directionText) this.directionText.visible = false
     const snapshot = this.session.getSnapshot(now)
     const result = buildTargetReachTrainingResult(
@@ -273,9 +289,22 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
     return candidates[Math.floor(Math.random() * candidates.length)]
   }
 
+  private getSuccessFeedbackDurationMs(): number {
+    return Number.isFinite(this.config.successFeedbackMs) ? Math.max(0, this.config.successFeedbackMs) : 0
+  }
+
+  /** 清理当前目标及其视觉进度，下一帧可以安全生成新目标。 */
+  private clearCurrentTarget(): void {
+    this.currentDirection = null
+    this.targetHoldStartedElapsedMs = null
+    this.targetSuccessFeedbackStartedElapsedMs = null
+    if (this.target) this.target.visible = false
+    if (this.targetProgress) this.targetProgress.clear().visible = false
+  }
+
   private render(now: number): void {
-    const { app, player, target, countdownText, directionText } = this
-    if (!app || !player || !target || !countdownText || !directionText) return
+    const { app, player, target, targetProgress, countdownText, directionText } = this
+    if (!app || !player || !target || !targetProgress || !countdownText || !directionText) return
     const insets = getTargetReachViewportInsets(app.screen.width, app.screen.height)
     const viewport = createTargetReachViewport(app.screen.width, app.screen.height, insets)
     this.redrawViewportGeometry(viewport.interactionScale)
@@ -288,6 +317,11 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
       const point = getTargetPosition(this.currentDirection, this.config.targetDistance)
       const targetPoint = normalizedToScreen(point, viewport)
       target.position.set(targetPoint.x, targetPoint.y)
+      targetProgress.position.set(targetPoint.x, targetPoint.y)
+      const progress = this.targetSuccessFeedbackStartedElapsedMs !== null
+        ? 1
+        : getTargetHoldProgress(snapshot.playingElapsedMs, this.targetHoldStartedElapsedMs, this.config.holdTimeMs)
+      this.redrawTargetProgress(targetProgress, this.config.targetRadius * viewport.interactionScale, progress)
       directionText.text = directionLabel(this.currentDirection)
       // 方向文字位于顶部预留区中线，不与左右两侧 HUD 抢占空间。
       directionText.position.set(viewport.centerX, Math.max(22, viewport.insets.top / 2))
@@ -298,10 +332,25 @@ export class TargetReachGame implements ITrainingGame<TargetReachTrainingResult>
       countdownText.position.set(viewport.centerX, viewport.centerY)
       countdownText.visible = true
       target.visible = false
+      targetProgress.visible = false
       directionText.visible = false
     } else {
       countdownText.visible = false
     }
+    if (!this.currentDirection) targetProgress.clear().visible = false
+  }
+
+  /** 进度从目标圆顶部顺时针增长，完整时改画整圆避免圆弧端点缝隙。 */
+  private redrawTargetProgress(graphic: Graphics, radius: number, progress: number): void {
+    graphic.clear()
+    if (progress <= 0 || radius <= 0) {
+      graphic.visible = false
+      return
+    }
+    if (progress >= 1) graphic.circle(0, 0, radius)
+    else graphic.arc(0, 0, radius, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress)
+    graphic.stroke({ width: 9, color: '#68d391', alpha: 1 })
+    graphic.visible = true
   }
 
   /** 仅在视口比例变化时重绘半径，避免 Pixi 每帧重复创建相同几何。 */

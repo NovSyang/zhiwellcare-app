@@ -11,10 +11,10 @@ export interface TrajectoryFollowGameConfig {
   trailWindowMs: number
 }
 
-/** V0.7 工程初始参数用于交互训练，不代表临床评分标准。 */
+/** 默认 20 秒完成一圈，保证 60 秒训练以较舒缓速度完整运行三圈。 */
 export const defaultTrajectoryFollowGameConfig: TrajectoryFollowGameConfig = {
   sessionDurationMs: 60_000,
-  cycleDurationMs: 12_000,
+  cycleDurationMs: 20_000,
   horizontalAmplitude: 0.65,
   verticalAmplitude: 0.45,
   toleranceRadius: 0.18,
