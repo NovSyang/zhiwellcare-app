@@ -59,7 +59,17 @@ function isService(goods: Goods): boolean {
 }
 
 function kindLabel(goods: Goods): string {
-  return goods.kind === 'hardware' ? '硬件' : '服务'
+  // 分指承托用品显示为辅具，避免被误认为带传感器的训练硬件。
+  if (goods.kind === 'service') return '服务'
+  return goods.hardwareType === 'hand-support' ? '辅具' : '硬件'
+}
+
+/** 按商品用途展示简介，按摩用品不使用主动训练设备的描述。 */
+function usageLabel(goods: Goods): string {
+  if (goods.kind === 'service') return '上门居家健身指导（非医疗服务）'
+  if (goods.hardwareType === 'hand-support') return '成人手部辅助用品'
+  if (goods.hardwareType === 'massager') return '居家按摩放松用品'
+  return '消费级主动训练硬件'
 }
 </script>
 
@@ -70,7 +80,8 @@ function kindLabel(goods: Goods): string {
         <div class="mall-hero-copy">
           <p class="eyebrow">ZhiWellCare Mall</p>
           <h1>商城</h1>
-          <p>智能训练硬件 × 居家健身指导服务</p>
+          <!-- 商城器材覆盖主动训练、手部辅助与日常按摩放松。 -->
+          <p>居家训练与放松器材 × 居家健身指导服务</p>
         </div>
         <button type="button" class="mall-cart-button" @click="openCart">
           <span class="mall-cart-icon">🛒</span><span>购物车</span>
@@ -78,7 +89,7 @@ function kindLabel(goods: Goods): string {
         </button>
       </div>
       <div class="hero-tags">
-        <span class="hero-tag">实物硬件 · 主动训练设备</span>
+        <span class="hero-tag">实物器材 · 训练设备、辅具与按摩用品</span>
         <span class="hero-tag">上门居家健身指导（非医疗服务）</span>
         <span class="hero-tag">演示环境 · 支付未接入</span>
       </div>
@@ -101,7 +112,15 @@ function kindLabel(goods: Goods): string {
       <article v-for="goods in filteredGoods" :key="goods.id" class="card card-hover goods-card" @click="goDetail(goods)">
         <div class="goods-cover" :class="{ 'is-service': isService(goods) }">
           <span class="mall-kind-chip" :class="{ 'is-service': isService(goods) }">{{ kindLabel(goods) }}</span>
-          <span class="mall-cover-emoji" aria-hidden="true">{{ goods.cover }}</span>
+          <!-- 有真实商品图时优先展示；其他商品继续使用原有 emoji 占位图。 -->
+          <img
+            v-if="goods.coverImage"
+            class="mall-cover-image"
+            :class="{ 'is-contained': goods.coverFit === 'contain' }"
+            :src="goods.coverImage"
+            :alt="goods.name"
+          />
+          <span v-else class="mall-cover-emoji" aria-hidden="true">{{ goods.cover }}</span>
           <span class="price-tag">演示价 ¥{{ goods.price }}/{{ goods.priceUnit }}</span>
         </div>
         <h3 class="mall-goods-name">{{ goods.name }}</h3>
@@ -111,7 +130,8 @@ function kindLabel(goods: Goods): string {
           <span v-if="goods.relatedHardware" class="tag-chip is-warn">需搭配训练底座</span>
         </div>
         <div class="goods-meta mall-goods-meta">
-          <span>{{ isService(goods) ? '上门居家健身指导（非医疗服务）' : '消费级主动训练硬件' }}</span>
+          <!-- 每类器材展示自身用途，包括新加入的按摩用品。 -->
+          <span>{{ usageLabel(goods) }}</span>
         </div>
         <div class="mall-card-footer">
           <span class="goods-price">¥{{ goods.price }}<span class="mall-price-unit">/{{ goods.priceUnit }}</span></span>
@@ -122,7 +142,8 @@ function kindLabel(goods: Goods): string {
 
     <div class="compliance-note mall-footer-note">
       <strong>交易与合规说明：</strong>
-      <span>商城为统一交易入口的演示版本：购物车与支付均为本地占位，全部价格均为演示价，不产生真实订单与扣款，正式版接入 Golang 后端订单系统与支付后开放下单。上门服务为「上门居家健身指导（非医疗服务）」，由合作服务商承接，APP 内不展示派单 / 工单；硬件为消费级主动训练设备（无医疗器械功能、无被动电机驱动、纯主动发力）。</span>
+      <!-- 统一说明覆盖主动训练设备、手部辅助用品与按摩用品。 -->
+      <span>商城为统一交易入口的演示版本：购物车与支付均为本地占位，全部价格均为演示价，不产生真实订单与扣款，正式版接入 Golang 后端订单系统与支付后开放下单。上门服务为「上门居家健身指导（非医疗服务）」，由合作服务商承接，APP 内不展示派单 / 工单；实物器材包含消费级主动训练设备（无医疗器械功能、无被动电机驱动、纯主动发力）、手部辅助用品与日常按摩用品，请按各商品说明使用。</span>
     </div>
 
     <Teleport to="body">
@@ -137,7 +158,16 @@ function kindLabel(goods: Goods): string {
           <template v-if="cartItems.length">
             <ul class="mall-cart-list">
               <li v-for="item in cartItems" :key="item.productId" class="mall-cart-row">
-                <span class="mall-cart-thumb" aria-hidden="true">{{ findGoodsById(item.productId)?.cover ?? '❓' }}</span>
+                <!-- 购物车缩略图与商品卡片保持一致，避免同一商品出现两套视觉。 -->
+                <img
+                  v-if="findGoodsById(item.productId)?.coverImage"
+                  class="mall-cart-thumb is-image"
+                  :class="{ 'is-contained': findGoodsById(item.productId)?.coverFit === 'contain' }"
+                  :src="findGoodsById(item.productId)?.coverImage"
+                  alt=""
+                  aria-hidden="true"
+                />
+                <span v-else class="mall-cart-thumb" aria-hidden="true">{{ findGoodsById(item.productId)?.cover ?? '❓' }}</span>
                 <span class="mall-cart-info">
                   <strong>{{ findGoodsById(item.productId)?.name ?? '未知商品' }}</strong>
                   <small>演示价 ¥{{ findGoodsById(item.productId)?.price ?? 0 }}/{{ findGoodsById(item.productId)?.priceUnit ?? '件' }} · ×{{ item.quantity }}</small>
@@ -245,6 +275,9 @@ function kindLabel(goods: Goods): string {
   font-weight: 700;
 }
 .mall-kind-chip.is-service { background: #08978b; }
+.mall-cover-image { width: 100%; height: 100%; display: block; object-fit: cover; }
+/* 白底器材图完整显示，让分指板的指部和腕部结构都可见。 */
+.mall-cover-image.is-contained { object-fit: contain; background: #fff; }
 .mall-cover-emoji { font-size: 42px; line-height: 1; }
 .mall-goods-name { margin: 2px 0 0; font-size: 16px; line-height: 1.45; }
 .mall-goods-summary { flex: 1; margin: 0; }
@@ -279,6 +312,9 @@ function kindLabel(goods: Goods): string {
   background: linear-gradient(150deg, #eaf3ff, #e6fbf8);
   font-size: 22px;
 }
+.mall-cart-thumb.is-image { display: block; object-fit: cover; }
+/* 购物车同步采用完整显示，避免缩略图只剩绑带局部。 */
+.mall-cart-thumb.is-image.is-contained { object-fit: contain; background: #fff; }
 .mall-cart-info { flex: 1; min-width: 0; }
 .mall-cart-info strong { display: block; font-size: 14px; line-height: 1.4; }
 .mall-cart-info small { display: block; color: var(--c-ink-3); font-size: 12px; }

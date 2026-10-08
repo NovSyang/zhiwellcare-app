@@ -14,14 +14,23 @@ let addTipTimer: number | null = null
 const productId = computed(() => (typeof route.params.productId === 'string' ? route.params.productId : ''))
 const goods = computed(() => (productId.value ? findGoodsById(productId.value) : undefined))
 const isService = computed(() => goods.value?.kind === 'service')
+/** 分指板用于手部分指与承托，使用辅具说明而非主动训练设备说明。 */
+const isHandSupport = computed(() => goods.value?.hardwareType === 'hand-support')
 const isPresale = computed(() => goods.value?.badges.includes('预售演示') ?? false)
 
-/** 强制展示的消费版通用声明（硬件 / 服务分别措辞）。 */
-const genericDisclaimer = computed(() =>
-  goods.value?.kind === 'hardware'
-    ? '本商品为消费级主动训练设备（消费品），无医疗器械功能、无被动电机驱动，训练动作完全由使用者主动发力完成；请按说明使用并量力而行，感到不适时立即停止。'
-    : '本服务为上门居家健身指导（非医疗服务），由合作服务商承接，仅提供居家健身动作演示与跟练支持；请量力而行，感到不适时立即停止，必要时寻求线下专业帮助。',
-)
+/** 按实际用途展示说明，按摩仪不套用主动训练硬件的无电机文案。 */
+const genericDisclaimer = computed(() => {
+  if (goods.value?.hardwareType === 'massager') {
+    return '本商品用于日常头部按摩与舒适放松；请按产品说明操作，控制接触力度，避免拉扯头发，感到不适时立即停止使用。'
+  }
+  if (isHandSupport.value) {
+    return '本商品用于成人手部分指与承托，绑带应保持舒适；请按说明使用并确认手型适配，感到不适时立即停止使用。'
+  }
+  if (goods.value?.kind === 'hardware') {
+    return '本商品为消费级主动训练设备（消费品），无医疗器械功能、无被动电机驱动，训练动作完全由使用者主动发力完成；请按说明使用并量力而行，感到不适时立即停止。'
+  }
+  return '本服务为上门居家健身指导（非医疗服务），由合作服务商承接，仅提供居家健身动作演示与跟练支持；请量力而行，感到不适时立即停止，必要时寻求线下专业帮助。'
+})
 
 onBeforeUnmount(() => {
   if (addTipTimer !== null) window.clearTimeout(addTipTimer)
@@ -55,8 +64,17 @@ function goBackToMall(): void {
         <!-- 左侧：cover 大图区 -->
         <section class="card mall-detail-cover-card">
           <div class="goods-cover mall-detail-cover" :class="{ 'is-service': isService }">
-            <span class="mall-kind-chip" :class="{ 'is-service': isService }">{{ isService ? '服务' : '硬件' }}</span>
-            <span class="mall-cover-emoji" aria-hidden="true">{{ goods.cover }}</span>
+            <!-- 按实际用途标记辅具，保持与商城列表一致。 -->
+            <span class="mall-kind-chip" :class="{ 'is-service': isService }">{{ isService ? '服务' : isHandSupport ? '辅具' : '硬件' }}</span>
+            <!-- 详情页复用商品数据中的真实图片，没有图片时再显示 emoji 占位图。 -->
+            <img
+              v-if="goods.coverImage"
+              class="mall-cover-image"
+              :class="{ 'is-contained': goods.coverFit === 'contain' }"
+              :src="goods.coverImage"
+              :alt="goods.name"
+            />
+            <span v-else class="mall-cover-emoji" aria-hidden="true">{{ goods.cover }}</span>
             <span class="mall-detail-price-pill">演示价 ¥{{ goods.price }}/{{ goods.priceUnit }}</span>
           </div>
           <div v-if="goods.relatedHardware" class="mall-related-hint">
@@ -211,6 +229,9 @@ function goBackToMall(): void {
   font-weight: 700;
 }
 .mall-kind-chip.is-service { background: #08978b; }
+.mall-cover-image { width: 100%; height: 100%; display: block; object-fit: cover; }
+/* 详情主图完整展示白底器材，方便查看分指结构与绑带。 */
+.mall-cover-image.is-contained { object-fit: contain; background: #fff; }
 .mall-cover-emoji { font-size: 78px; line-height: 1; }
 .mall-detail-price-pill {
   position: absolute;
