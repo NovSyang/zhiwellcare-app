@@ -3,6 +3,8 @@
   "manifestUrl": "https://gitee.com/Syang03/zhiwell-care/raw/main/channels/stable/android-latest.json",
   "downloadBaseUrl": "https://gitee.com/Syang03/zhiwell-care/releases/download/",
   "allowedDownloadHosts": [
-    "gitee.com"
+    "gitee.com",
+    "raw.giteeusercontent.com",
+    "foruda.gitee.com"
   ]
 }

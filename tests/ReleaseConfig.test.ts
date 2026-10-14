@@ -1,11 +1,13 @@
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import config from '../release-config.json'
 import signing from '../release-signing.json'
 import tauri from '../src-tauri/tauri.conf.json'
 import { UPDATE_CHANNEL } from '../src/platform/update/UpdateEndpoints'
+import { anonymousGet } from '../scripts/release/verify-published-assets.mjs'
+import { validateAssetUrl } from '../scripts/release/common.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -49,6 +51,45 @@ describe('统一发布配置', () => {
     for (const host of ['*.gitee.com', 'user:password@gitee.com', 'gitee.com/path']) {
       expect(() => validate({ ...config, allowedDownloadHosts: ['gitee.com', host] })).toThrow()
     }
+  })
+
+  it('原生白名单同步实测 Gitee 主机，长期入口仍位于指定仓库', () => {
+    // 白名单仅登记已实测的跳转主机，不将临时 CDN 地址写为长期入口。
+    expect(config.allowedDownloadHosts).toEqual(expect.arrayContaining(['gitee.com', 'raw.giteeusercontent.com', 'foruda.gitee.com']))
+    const native = JSON.parse(readFileSync(resolve(root, 'android/update-config.json'), 'utf8'))
+    expect(native.allowedDownloadHosts).toEqual(config.allowedDownloadHosts)
+    expect(config.publishRepository).toBe('https://gitee.com/Syang03/zhiwell-care.git')
+    for (const channel of Object.values(config.channels)) {
+      expect(new URL(channel.androidManifestUrl).hostname).toBe('gitee.com')
+      expect(new URL(channel.tauriManifestUrl).hostname).toBe('gitee.com')
+    }
+    expect(() => validate(config)).not.toThrow()
+  })
+
+  it.each(['raw.giteeusercontent.com', 'foruda.gitee.com'])('逐跳允许已登记主机 %s', async (host) => {
+    // 使用受控响应测试白名单，不把它当作六个实际附件的网络验收。
+    const entry = config.channels.stable.androidManifestUrl
+    const target = `https://${host}/fixture/response`
+    const fetcher = vi.fn(async (url: string) => url === entry
+      ? new Response(null, { status: 302, headers: { location: target } })
+      : new Response('{"fixture":true}', { headers: { 'content-type': 'application/json' } }))
+    const result = await anonymousGet(entry, { allowedHosts: config.allowedDownloadHosts, maxBytes: 100, fetcher })
+    expect(result.bytes.toString('utf8')).toBe('{"fixture":true}')
+    expect(fetcher).toHaveBeenNthCalledWith(2, target, expect.objectContaining({ credentials: 'omit', redirect: 'manual' }))
+  })
+
+  it('新增主机不会放宽 HTTPS、仓库及未批准主机边界', async () => {
+    const entry = config.channels.stable.androidManifestUrl
+    for (const target of ['http://raw.giteeusercontent.com/fixture', 'https://unapproved.example/fixture', 'https://user:password@foruda.gitee.com/fixture']) {
+      const fetcher = vi.fn(async () => new Response(null, { status: 302, headers: { location: target } }))
+      await expect(anonymousGet(entry, { allowedHosts: config.allowedDownloadHosts, maxBytes: 100, fetcher })).rejects.toThrow()
+      expect(fetcher).toHaveBeenCalledOnce()
+    }
+    const identity = { version: '0.1.0', platform: 'android' }
+    const filename = 'ZhiWellCare-0.1.0-android.apk'
+    expect(() => validateAssetUrl(`https://gitee.com/Other/repo/releases/download/v0.1.0/${filename}`, config, identity)).toThrow()
+    // 跳转主机批准不等于允许把 CDN 地址直接作为发布清单的安装包永久 URL。
+    expect(() => validateAssetUrl(`https://foruda.gitee.com/releases/download/v0.1.0/${filename}`, config, identity)).toThrow()
   })
 
   it('前端仅公开 Tauri 构建环境字段', () => {

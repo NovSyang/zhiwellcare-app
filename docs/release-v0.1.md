@@ -11,6 +11,10 @@
 
 运行 `npm run release:config:sync` 后，脚本生成 `UpdateEndpoints.ts`、`android/update-config.json`，并同步 Tauri endpoint 和公钥。`npm run release:config:check` 不写文件，发现错仓库、旧入口、占位身份或漂移会失败。Windows 实际读取 Tauri 配置中的入口。
 
+截至 2026-10-15，`allowedDownloadHosts` 已按实际 HTTPS 跳转登记 `gitee.com`、`raw.giteeusercontent.com`、`foruda.gitee.com`。本仓库健康探针的 Gitee Raw 入口返回 302，跳转至 `raw.giteeusercontent.com` 后取得 200 JSON；`release-output/private/gitee-health-validation.json` 记录匿名 GET 通过且未携带认证头。对官方 `mcp-gitee` Release 附件的实测观察到下载路由经 `gitee.com/attach_files/...` 到 `foruda.gitee.com` 返回附件。这些先行实测用于批准跳转主机；本项目六份 staging APK、EXE、EXE.sig 随后均完成完整下载和验签，具体证据见下方“当前验证记录与发布门禁”。
+
+两通道的永久清单入口继续使用 `gitee.com/Syang03/zhiwell-care/raw/main/channels/...`，安装包永久路由继续限定指定仓库的 `releases/download/<tag>/<filename>`。CDN 白名单仅供逐跳检查，清单不保存一次性 CDN 地址；HTTPS、无凭据、指定仓库、两段附件路径和未批准主机的拒绝规则保持有效。
+
 Android Release 构建在 Gradle 中再次检查别名、私钥可用性及证书 DER 指纹；最终 APK 用 SDK 的 aapt/apksigner 检查真实包名、版本、debuggable 和签名。Windows 用最终 EXE 的 VersionInfo 检查版本，用锁定的 Minisign 验证工具检查 `.sig`。变更二进制内容后必须重新签名。
 
 执行前，通过已有安全输入或密码管理工具将签名密码注入当前进程环境。`release.ps1` 使用受控环境中的密码；本机路径取自 `release.local.json`。密码不得写入命令行、`VITE_*`、源码、报告或聊天。Vite 只公开 `VITE_` 和 `TAURI_ENV_` 字段。
@@ -86,17 +90,23 @@ StagePublic 只复制五份白名单资料，检查目标真实路径，拒绝�
 
 ## 当前验证记录与发布门禁
 
-最终 stable `0.1.0/code 1` 与 staging `0.1.0/code 1`、`0.1.1/code 2` 三套候选已在冻结源码后分别通过全部 75 个 Vitest 文件、397 项测试、严格类型检查、分端前端构建及真实原生验签。逐项结果、二进制摘要及负向验签记录以本机 release-output/private/final-candidate-validation.json 为准。三套候选的错误公钥、单字节 EXE 篡改、APK 版本/code/证书指纹不匹配均实测拒绝；公开资料白名单和本地版本递增通过。此汇总仅代表本地安装包验收，不代表远端下载或设备升级通过。
+stable `0.1.0/code 1` 与 staging `0.1.0/code 1`、`0.1.1/code 2` 三套候选在新增 CDN 配置后，分别通过全部 75 个 Vitest 文件、401 项测试，以及各自 `android:sync` 中的严格类型检查和前端构建。三套 APK 已分别重新执行 Release 签包，实际 DEX 检查确认均包含三个批准主机及对应通道。Windows EXE 和 `.sig` 未因 Android 白名单变更重编，字节摘要与此前已验签候选一致。进度依据为 `release-output/private/cdn-rebuild-progress.json`，本批产物摘要及真实验签依据为 `release-output/private/final-candidate-validation.json`。
 
-稳定基线和 staging 基线曾完整执行 Prepare，包括真实首次发布预检与锁定依赖安装；最后的 Windows 生命周期修改后，使用同一锁定依赖重新执行全量测试及两端受控构建。staging `0.1.1` 是本地 QA 候选，因远端尚无已发布基线，其正常线上 Prepare 预检仍未通过；没有把本地清单假装成已发布清单来绕过该门槛。
+最新三套候选的错误公钥、单字节 EXE 篡改、APK 版本/code/证书指纹不匹配均实测拒绝；公开资料白名单和本地版本递增通过。`private/previous-cdn-*` 等旧归档仅用于追溯。`final-candidate-validation.json` 保留本地候选验收时远端发布和设备升级为 `not-executed` 的历史状态；当前收尾状态以 `release-output/private/implementation-report.md`、`implementation-receipt.json` 及下述四份真实远端报告为准。
 
-官方 Gradle 8.14.3 Wrapper 已实际启动通过，使用与官方 SHA-256 一致的现有 ZIP 缓存验证。Android 原生网络、Cookie 隔离和安装会话 19 项测试已有通过结果。
+稳定基线和 staging 基线曾完整执行 Prepare，包括真实首次发布预检与锁定依赖安装；最后的 Windows 生命周期修改后，使用同一锁定依赖重新执行全量测试及两端受控构建。staging `0.1.1/code 2` 已匿名读取远端已发布的 `0.1.0/code 1`，正常线上版本递增预检通过，`firstRelease:false`，没有使用首次发布模式绕过后续版本检查。
 
-release-output/private/environment-validation.json 的原始记录显示 Gitee refs 为空、匿名健康探针返回 404、Android 设备数量为零。独立发行工作副本已只读克隆并准备三份初始化资料，但尚未提交或推送；它不是已建立的在线更新入口。Gitee 完整附件下载、通道清单验收、staging 两端真实升级和 stable 远端发布均未执行。
+官方 Gradle 8.14.3 Wrapper 已实际启动通过，使用与官方 SHA-256 一致的现有 ZIP 缓存验证。Android 原生 JVM 已有 HTTP 12 项、Cookie 隔离 3 项、安装会话 4 项，共 19 项通过记录。本轮只调整公开 CDN 配置，原生 Java 源码未变，未重复执行这 19 项；本次新增的配置与跳转回归已包含在三套候选各自的 401 项 Vitest 中。
+
+`release-output/private/environment-validation.json` 中 refs 为空、健康探针 404 是初始化前的历史记录。用户授权的 staging 公开发布已执行：Gitee 的 `test-v0.1.0-20261014-local-verification`、`test-v0.1.1-20261014-local-verification` 两个 Release 共六份 APK、EXE、EXE.sig 均已真实上传。`0.1.0` 清单与不可变快照由提交 `9dc38015c69ce0ccb777fa21263e2c5057f507eb` 发布；随后 `0.1.1` 快照及 staging 指针由提交 `26648b379c7fc548933edb3e752cebf43482041a` 推送至 `main`，当前两端 staging 清单均指向 `0.1.1`。
+
+两套归档 `release-output/staging/0.1.0-20261014-local-verification/`、`release-output/staging/0.1.1-20261014-local-verification/` 各自的 `private/remote-validation-report.json`（`local-manifests`）和 `private/remote-manifests-validation-report.json`（`remote-manifests`）共四份报告均为 `verified:true`。每轮均完整匿名 GET 三份附件并核对最终字节、大小、SHA-256、APK 真实版本和正式证书、Windows EXE 版本及 Tauri 签名；远端清单模式还真实读取两份 Raw JSON，与该版本归档一致。`0.1.0` 与 `0.1.1` 的远端清单验收分别于 UTC `2026-10-14T17:33:42.737Z`、`2026-10-14T17:36:30.659Z` 通过。健康探针和官方 CDN 跳转的先行检查已有本项目六份实际附件的完整验收补足。
+
+本机 Windows staging `0.1.0` 已完成首次安装，界面控制工具未显示授权提示并超时，已请求用户协助准备训练记录；`0.1.0 → 0.1.1` 的实际在线升级、安装退出/重启及新增训练记录和设置保留仍待验证。最新只读 ADB 检查仍为零台设备，Android 等待连接目标设备后执行来源授权、取消、低空间、重启、BLE/训练回归及双版本升级。stable 正式通道尚未发布。staging 与 stable 使用相同产品名和应用标识，共用安装及用户数据目录，测试结束后的卸载、降级或数据清理应按已确认的具体范围处理。
 
 依赖审计原始记录保存在 release-output/private/dependency-audit.json 和 dependency-audit-production.json；八个受影响依赖包及生产分类的 source-map-js 高危项尚未修补。本轮未更改原依赖版本，签名环境隔离只降低构建和测试接触秘密的风险。具体剩余风险应结合实际打包内容评估。
 
-正式首发必须取得 Gitee 匿名原始 JSON 和完整附件的成功验收，并完成两端 staging 真实升级、来源授权/取消/低空间等失败场景、训练期间安装限制和新基线数据保留验证。缺少目标设备或发布权限时，报告保留“未执行及原因”，stable 更新入口继续保持未发布状态。
+正式首发必须取得 Gitee 匿名原始 JSON 和完整附件的成功验收，并完成两端 staging 真实升级、来源授权/取消/低空间等失败场景、训练期间安装限制和新基线数据保留验证。缺少目标设备或任一验收尚未完成时，报告保留“未执行及原因”，stable 更新入口继续保持未发布状态。
 
 ## 平台依据
 
