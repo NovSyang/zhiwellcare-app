@@ -2,6 +2,7 @@ import { getVersion } from '@tauri-apps/api/app'
 import { check, type DownloadEvent, type Update } from '@tauri-apps/plugin-updater'
 import type { IUpdateProvider, UpdateInstallPermission } from '../../core/update/IUpdateProvider'
 import type { UpdateInfo, UpdateProgress } from '../../core/update/UpdateInfo'
+import { formatDisplayVersion } from '../../core/version/AppVersion'
 
 /** Tauri Provider 保留 Update 资源，使下载和安全时机安装可以分开执行。 */
 export class TauriUpdateProvider implements IUpdateProvider {
@@ -25,7 +26,8 @@ export class TauriUpdateProvider implements IUpdateProvider {
     return {
       currentVersion: this.update.currentVersion,
       latestVersion: this.update.version,
-      displayVersion: this.update.version,
+      // 桌面展示与 Android 一致，内部版本仍交给官方插件比较和验签。
+      displayVersion: formatDisplayVersion(this.update.version),
       notes: splitNotes(this.update.body),
       publishedAt: this.update.date ?? null,
       sizeBytes: null,

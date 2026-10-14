@@ -13,5 +13,7 @@ export interface IUpdateProvider {
   install(): Promise<void>
   getInstallPermission(): Promise<UpdateInstallPermission>
   openInstallPermissionSettings(): Promise<void>
+  /** 清理更新缓存，不接触训练记录；平台无独立缓存时可省略。 */
+  clearDownloadedUpdate?(): Promise<void>
   dispose(): Promise<void>
 }

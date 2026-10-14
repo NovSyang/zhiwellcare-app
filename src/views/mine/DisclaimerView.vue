@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
+import { formatVersionLabel } from '../../core/version/AppVersion'
+import { UPDATE_CHANNEL } from '../../platform/update/UpdateEndpoints'
 
 const router = useRouter()
+// 版本文案从统一元数据读取，后续发版无需单独修改免责声明页面。
+const appVersionLabel = formatVersionLabel()
+const internalBuild = String(UPDATE_CHANNEL) === 'staging'
 
 function backToMine(): void { void router.push('/mine') }
 </script>
@@ -51,7 +56,7 @@ function backToMine(): void { void router.push('/mine') }
 
       <button class="button ghost wide subpage-bottom-button" type="button" @click="backToMine">返回我的</button>
 
-      <footer class="page-footnote"><p class="muted small">智为康乐 ZhiWellCare · 免责声明与隐私 · v0.1.0</p></footer>
+      <footer class="page-footnote"><p class="muted small">智为康乐 ZhiWellCare · 免责声明与隐私 · {{ appVersionLabel }}<span v-if="internalBuild"> · 内部验证版</span></p></footer>
     </div>
   </main>
 </template>

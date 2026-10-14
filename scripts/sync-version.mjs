@@ -1,10 +1,13 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { assertVersionAdvance, parseArgs, validateVersionFile } from './release/common.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const writeMode = process.argv.includes('--write')
-const checkMode = process.argv.includes('--check')
+// 版本同步保留原命令，同时提供发布前的显式首次初始化/递增检查。
+const options = parseArgs(process.argv.slice(2), ['published-android', 'published-tauri'], ['write', 'check', 'first-release', 'require-published'])
+const writeMode = Boolean(options.write)
+const checkMode = Boolean(options.check)
 
 if (writeMode === checkMode) {
   throw new Error('请使用 --write 或 --check 其中一个参数。')
@@ -12,11 +15,18 @@ if (writeMode === checkMode) {
 
 const versionFile = await readJson('release-version.json')
 validateVersionFile(versionFile)
+if (options['first-release'] || options['require-published'] || options['published-android'] || options['published-tauri']) {
+  assertVersionAdvance(versionFile,
+    options['published-android'] ? await readJson(options['published-android']) : null,
+    options['published-tauri'] ? await readJson(options['published-tauri']) : null, options['first-release'])
+}
 
 const packageJson = await readJson('package.json')
 const packageLock = await readJson('package-lock.json')
 const tauriConfig = await readJson('src-tauri/tauri.conf.json')
 const androidBuild = await readText('android/app/build.gradle')
+const cargoToml = await readText('src-tauri/Cargo.toml')
+const cargoLock = await readText('src-tauri/Cargo.lock')
 
 packageJson.version = versionFile.productVersion
 packageLock.version = versionFile.productVersion
@@ -27,17 +37,26 @@ const nextAndroidBuild = androidBuild
   .replace(/versionCode\s+\d+/, `versionCode ${versionFile.android.versionCode}`)
   .replace(/versionName\s+"[^"]+"/, `versionName "${versionFile.android.versionName}"`)
 
+// 只同步应用自有 Rust 包，不触碰 updater 或其他锁定依赖版本。
+const nextCargoToml = cargoToml.replace(/(\[package\][\s\S]*?\nversion\s*=\s*)"[^"]+"/, `$1"${versionFile.desktop.version}"`)
+const ownPackage = /(\[\[package\]\]\r?\nname = "zhiwellcare-app"\r?\nversion = )"[^"]+"/
+if (!ownPackage.test(cargoLock)) throw new Error('Cargo.lock 缺少 zhiwellcare-app 自有包。')
+const nextCargoLock = cargoLock.replace(ownPackage, `$1"${versionFile.desktop.version}"`)
+
 const targets = [
   ['package.json', `${JSON.stringify(packageJson, null, 2)}\n`],
   ['package-lock.json', `${JSON.stringify(packageLock, null, 2)}\n`],
   ['src-tauri/tauri.conf.json', `${JSON.stringify(tauriConfig, null, 2)}\n`],
   ['android/app/build.gradle', nextAndroidBuild],
+  ['src-tauri/Cargo.toml', nextCargoToml],
+  ['src-tauri/Cargo.lock', nextCargoLock],
 ]
 
 const drifted = []
 for (const [path, expected] of targets) {
   const current = await readText(path)
-  if (current === expected) continue
+  // Git 在 Windows 新工作树会转换为 CRLF，换行差异不属于版本漂移。
+  if (current.replace(/\r\n/g, '\n') === expected.replace(/\r\n/g, '\n')) continue
   if (writeMode) await writeFile(resolve(root, path), expected, 'utf8')
   else drifted.push(path)
 }
@@ -54,21 +73,4 @@ async function readText(path) {
 
 async function readJson(path) {
   return JSON.parse(await readText(path))
-}
-
-/** 发布版本只接受三段 SemVer，Android code 必须是永久递增的正整数。 */
-function validateVersionFile(value) {
-  const semver = /^\d+\.\d+\.\d+$/
-  if (value?.schemaVersion !== 1
-    || !semver.test(value.productVersion)
-    || !semver.test(value.desktop?.version)
-    || !semver.test(value.android?.versionName)
-    || typeof value.displayVersion !== 'string'
-    || !Number.isInteger(value.android?.versionCode)
-    || value.android.versionCode <= 0) {
-    throw new Error('release-version.json 格式无效。')
-  }
-  if (value.productVersion !== value.desktop.version || value.productVersion !== value.android.versionName) {
-    throw new Error('Product、Desktop 与 Android versionName 必须保持一致。')
-  }
 }

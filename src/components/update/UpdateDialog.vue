@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { updateService } from '../../app/AppServices'
 import type { AppUpdateSnapshot } from '../../core/update/AppUpdateService'
+import { formatVersionLabel } from '../../core/version/AppVersion'
 
 // 全局弹窗订阅单例服务，路由切换时不会重复创建下载任务。
 const snapshot = ref<AppUpdateSnapshot>(updateService.getSnapshot())
@@ -39,7 +40,8 @@ function formatSize(value: number | null): string { return value === null ? '未
           <button class="button" :disabled="!canDismiss" aria-label="关闭更新弹窗" @click="dismiss">关闭</button>
         </header>
         <div class="update-dialog-body">
-          <p>当前版本 {{ snapshot.info?.currentVersion }} → 新版本 {{ snapshot.info?.displayVersion }}</p>
+          <!-- 当前和目标版本均通过同一函数加前缀，Windows 也显示 V0.1。 -->
+          <p>当前版本 {{ formatVersionLabel(snapshot.info?.currentVersion) }} → 新版本 {{ formatVersionLabel(snapshot.info?.displayVersion) }}</p>
           <p class="muted">文件大小：{{ formatSize(snapshot.info?.sizeBytes ?? null) }}</p>
           <ul v-if="snapshot.info?.notes.length" class="update-notes"><li v-for="note in snapshot.info.notes" :key="note">{{ note }}</li></ul>
           <p v-else class="muted">本次更新暂无详细说明。</p>
@@ -48,11 +50,12 @@ function formatSize(value: number | null): string { return value === null ? '未
           </div>
           <p v-if="snapshot.progress" class="muted small">{{ snapshot.progress.percent === null ? '正在下载…' : `${snapshot.progress.percent}%` }}</p>
           <p v-if="snapshot.state === 'waiting-install' && !snapshot.installSafe" class="muted">训练或标定结束后将继续安装。</p>
+          <p v-if="snapshot.state === 'waiting-permission'" class="muted">请允许此应用安装更新，授权后返回将继续安装。</p>
           <p v-if="snapshot.errorMessage" class="error">{{ snapshot.errorMessage }}</p>
         </div>
         <footer class="row">
           <button v-if="canDismiss" class="button" @click="dismiss">稍后更新</button>
-          <button v-if="snapshot.installPermission === 'denied'" class="button primary" @click="allowInstall">允许安装更新</button>
+          <button v-if="snapshot.state === 'waiting-permission' && snapshot.installPermission === 'denied'" class="button primary" @click="allowInstall">允许安装更新</button>
           <button v-else-if="snapshot.state === 'available'" class="button primary" @click="updateNow">立即更新</button>
           <button v-else-if="snapshot.state === 'downloaded' || snapshot.state === 'waiting-install'" class="button primary" :disabled="!snapshot.installSafe" @click="install">安装</button>
           <button v-else-if="snapshot.state === 'error'" class="button primary" @click="retry">重新检查</button>

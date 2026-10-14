@@ -7,6 +7,9 @@ export type UpdateState =
   | 'downloading'
   | 'downloaded'
   | 'waiting-install'
+  // 来源授权与训练锁等待分开，只有来源授权任务允许回前台自动恢复。
+  | 'waiting-permission'
   | 'installing'
+  | 'installed'
   | 'unsupported'
   | 'error'

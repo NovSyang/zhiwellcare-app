@@ -4,9 +4,14 @@ import { useRouter } from 'vue-router'
 import { reportService, trainingRepository } from '../../app/AppServices'
 import type { TrainingRecord } from '../../core/training/TrainingRecord'
 import { useAuthStore } from '../../stores/auth'
+import { formatVersionLabel } from '../../core/version/AppVersion'
+import { UPDATE_CHANNEL } from '../../platform/update/UpdateEndpoints'
 
 const router = useRouter()
 const auth = useAuthStore()
+// 页面页脚复用发布版本来源，staging 构建显式标为内部验证版。
+const appVersionLabel = formatVersionLabel()
+const internalBuild = String(UPDATE_CHANNEL) === 'staging'
 
 // ── 训练数据统计（路由守卫已初始化仓库与上报服务，页面只需读取快照） ──
 const records = ref<TrainingRecord[]>([])
@@ -130,7 +135,7 @@ function formatError(error: unknown): string { return error instanceof Error ? e
       </nav>
 
       <footer class="mine-footer">
-        <p class="muted small">智为康乐 ZhiWellCare · v0.1.0</p>
+        <p class="muted small">智为康乐 ZhiWellCare · {{ appVersionLabel }}<span v-if="internalBuild"> · 内部验证版</span></p>
       </footer>
     </div>
   </main>

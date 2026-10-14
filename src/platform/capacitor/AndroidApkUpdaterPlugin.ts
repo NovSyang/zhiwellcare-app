@@ -20,8 +20,15 @@ export interface AndroidDownloadProgress {
   percent: number | null
 }
 
+/** 原生层负责网络限制和重定向，业务层继续校验 JSON 清单。 */
+export interface AndroidManifestResponse {
+  body: string
+  finalUrl: string
+}
+
 export interface AndroidUpdaterBridge {
   getCurrentVersion(): Promise<AndroidAppVersion>
+  fetchUpdateManifest(options: { url: string }): Promise<AndroidManifestResponse>
   getInstallPermission(): Promise<{ required: boolean; granted: boolean }>
   openInstallPermissionSettings(): Promise<void>
   downloadApk(options: AndroidDownloadOptions): Promise<{ sizeBytes: number; sha256: string }>

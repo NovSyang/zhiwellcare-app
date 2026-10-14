@@ -24,25 +24,41 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
-/** Android 内部更新插件：下载和安装均留在 Native 层，Vue 无法访问 APK 文件路径。 */
+/** Android 内部更新插件：清单、下载和安装都在原生层完成。 */
 @CapacitorPlugin(name = "AndroidApkUpdater")
 public class AndroidApkUpdaterPlugin extends Plugin {
     private static final String UPDATE_DIRECTORY = "updates";
     private static final String UPDATE_FILE = "ZhiWellCare-update.apk";
     private static final String PART_FILE = "ZhiWellCare-update.apk.part";
+    private static final long DISK_RESERVE_BYTES = 16L * 1024 * 1024;
+    private static final long INSTALL_TIMEOUT_MINUTES = 10;
+    // 同一工作队列负责所有文件操作，清理不会与下载/安装写入竞争。
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
-    private final AtomicBoolean downloading = new AtomicBoolean(false);
+    private final ScheduledExecutorService installWatchdog = Executors.newSingleThreadScheduledExecutor();
+    private final Object stateLock = new Object();
+    private boolean downloading;
+    private boolean installing;
+    private boolean destroyed;
+    private long downloadGeneration;
+    private UpdateHttpClient activeRequest;
+    private DownloadedUpdate downloadedUpdate;
     private BroadcastReceiver installReceiver;
+    private PluginCall installCall;
+    private int installSessionId = -1;
+    private ScheduledFuture<?> installDeadline;
 
     @PluginMethod
     public void getCurrentVersion(PluginCall call) {
@@ -54,8 +70,30 @@ public class AndroidApkUpdaterPlugin extends Plugin {
             result.put("versionCode", packageVersionCode(info));
             call.resolve(result);
         } catch (Exception error) {
-            call.reject("无法读取当前应用版本。", error);
+            call.reject("无法读取当前应用版本。", "UPDATE_VERSION_READ_FAILED", error);
         }
+    }
+
+    @PluginMethod
+    public void fetchUpdateManifest(PluginCall call) {
+        String url = call.getString("url");
+        if (!BuildConfig.UPDATE_MANIFEST_URL.equals(url)) {
+            call.reject("更新清单地址与本构建配置不一致。", "UPDATE_MANIFEST_URL_INVALID");
+            return;
+        }
+        enqueue(call, () -> {
+            UpdateHttpClient client = httpClient();
+            setActiveRequest(client);
+            try {
+                UpdateHttpClient.ManifestResponse response = client.fetchManifest(url);
+                JSObject result = new JSObject();
+                result.put("body", response.body);
+                result.put("finalUrl", response.finalUrl);
+                call.resolve(result);
+            } finally {
+                clearActiveRequest(client);
+            }
+        });
     }
 
     @PluginMethod
@@ -80,155 +118,230 @@ public class AndroidApkUpdaterPlugin extends Plugin {
             getActivity().startActivity(intent);
             call.resolve();
         } catch (Exception error) {
-            call.reject("无法打开安装更新权限设置。", error);
+            call.reject("无法打开安装更新权限设置。", "UPDATE_INSTALL_PERMISSION_DENIED", error);
         }
     }
 
     @PluginMethod
     public void downloadApk(PluginCall call) {
         String url = call.getString("url");
-        String expectedSha256 = call.getString("sha256");
-        String expectedPackageName = call.getString("expectedPackageName");
-        Integer expectedVersionCode = call.getInt("expectedVersionCode");
-        Double expectedSizeValue = call.getDouble("expectedSizeBytes");
-        long expectedSize = expectedSizeValue == null ? -1 : expectedSizeValue.longValue();
-
-        if (url == null || !url.startsWith("https://") || expectedSha256 == null
-                || expectedPackageName == null || expectedVersionCode == null) {
-            call.reject("APK 下载参数无效。");
+        String sha256 = call.getString("sha256");
+        String packageName = call.getString("expectedPackageName");
+        Double versionValue = call.getDouble("expectedVersionCode");
+        Double sizeValue = call.getDouble("expectedSizeBytes");
+        if (url == null || sha256 == null || !sha256.matches("(?i)[0-9a-f]{64}")
+                || !getContext().getPackageName().equals(packageName) || !positiveSafeInteger(versionValue)
+                || !positiveSafeInteger(sizeValue) || sizeValue > UpdateHttpClient.MAX_APK_BYTES) {
+            call.reject("APK 下载参数无效。", "UPDATE_DOWNLOAD_INVALID");
             return;
         }
-        if (!downloading.compareAndSet(false, true)) {
-            call.reject("已有更新正在下载，请稍候。");
-            return;
+        final long generation;
+        final DownloadedUpdate candidate = new DownloadedUpdate(packageName, versionValue.longValue(),
+                sizeValue.longValue(), sha256.toLowerCase(Locale.ROOT));
+        synchronized (stateLock) {
+            if (destroyed || downloading || installing) {
+                call.reject("已有更新任务正在进行，请稍候。", "UPDATE_BUSY");
+                return;
+            }
+            downloading = true;
+            generation = ++downloadGeneration;
+            downloadedUpdate = null;
         }
-
-        executor.execute(() -> {
-            File partFile = updateFile(PART_FILE);
-            File finalFile = updateFile(UPDATE_FILE);
-            deleteQuietly(partFile);
-            deleteQuietly(finalFile);
+        enqueue(call, () -> {
+            File part = null;
+            File apk = null;
+            UpdateHttpClient client = null;
+            JSObject response = new JSObject();
             try {
-                DownloadResult result = download(url, partFile);
-                if (expectedSize > 0 && result.sizeBytes != expectedSize) {
-                    throw new IllegalStateException("APK 文件大小与更新清单不一致。");
+                requireCurrentDownload(generation);
+                part = updateFile(PART_FILE);
+                apk = updateFile(UPDATE_FILE);
+                client = httpClient();
+                client.validateDownloadUrl(url);
+                deleteQuietly(part);
+                deleteQuietly(apk);
+                // 预留缓存与系统安装副本的空间，不等文件写满磁盘后再报错。
+                if (part.getParentFile().getUsableSpace() < candidate.sizeBytes * 2 + DISK_RESERVE_BYTES) {
+                    throw new IllegalStateException("设备可用空间不足，请清理空间后重试。");
                 }
-                if (!constantTimeEquals(result.sha256, expectedSha256.toLowerCase(Locale.ROOT))) {
-                    throw new IllegalStateException("APK SHA-256 校验失败。");
+                synchronized (stateLock) {
+                    requireCurrentDownload(generation);
+                    setActiveRequest(client);
                 }
-                verifyArchive(partFile, expectedPackageName, expectedVersionCode.longValue());
-                if (!partFile.renameTo(finalFile)) throw new IllegalStateException("无法保存已验证的更新文件。");
-
-                JSObject response = new JSObject();
+                UpdateHttpClient.DownloadResponse result;
+                try (OutputStream output = new FileOutputStream(part)) {
+                    result = client.download(url, output, candidate.sizeBytes, this::publishProgress);
+                }
+                requireCurrentDownload(generation);
+                if (!constantTimeEquals(result.sha256, candidate.sha256)) throw new IllegalStateException("APK SHA-256 校验失败。");
+                verifyArchive(part, candidate.packageName, candidate.versionCode);
+                synchronized (stateLock) {
+                    requireCurrentDownload(generation);
+                    if (!part.renameTo(apk)) throw new IllegalStateException("无法保存已验证的更新文件。");
+                    downloadedUpdate = candidate;
+                }
                 response.put("sizeBytes", result.sizeBytes);
                 response.put("sha256", result.sha256);
-                call.resolve(response);
             } catch (Exception error) {
-                deleteQuietly(partFile);
-                deleteQuietly(finalFile);
-                call.reject(error.getMessage() == null ? "APK 下载失败。" : error.getMessage(), error);
+                deleteQuietly(part);
+                deleteQuietly(apk);
+                synchronized (stateLock) { downloadedUpdate = null; }
+                requireCurrentDownload(generation);
+                throw error;
             } finally {
-                downloading.set(false);
+                clearActiveRequest(client);
+                synchronized (stateLock) { downloading = false; }
             }
+            // 先释放任务锁再回调，前端收到下载成功后可以立即发起安装。
+            call.resolve(response);
         });
     }
 
     @PluginMethod
     public void installDownloadedApk(PluginCall call) {
-        File apk = updateFile(UPDATE_FILE);
-        if (!apk.isFile()) {
-            call.reject("尚未下载可安装的更新文件。");
-            return;
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
-                && !getContext().getPackageManager().canRequestPackageInstalls()) {
-            call.reject("请先允许 ZhiWellCare 安装应用更新。");
-            return;
-        }
-        if (installReceiver != null) {
-            call.reject("安装流程已经启动。");
-            return;
-        }
-
-        try {
-            PackageInstaller installer = getContext().getPackageManager().getPackageInstaller();
-            PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
-            params.setAppPackageName(getContext().getPackageName());
-            int sessionId = installer.createSession(params);
-            try (PackageInstaller.Session session = installer.openSession(sessionId);
-                 InputStream input = new FileInputStream(apk);
-                 OutputStream output = session.openWrite("base.apk", 0, apk.length())) {
-                copy(input, output);
-                session.fsync(output);
-
-                String action = getContext().getPackageName() + ".UPDATE_INSTALL_STATUS." + sessionId;
-                installReceiver = createInstallReceiver(call);
-                registerInstallReceiver(action, installReceiver);
-                Intent statusIntent = new Intent(action).setPackage(getContext().getPackageName());
-                int flags = PendingIntent.FLAG_UPDATE_CURRENT;
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE;
-                PendingIntent pendingIntent = PendingIntent.getBroadcast(getContext(), sessionId, statusIntent, flags);
-                // 调用会保持到系统返回成功、失败或需要用户确认的最终结果。
-                call.setKeepAlive(true);
-                session.commit(pendingIntent.getIntentSender());
+        final DownloadedUpdate candidate;
+        synchronized (stateLock) {
+            if (destroyed || downloading || installing) {
+                call.reject("已有更新任务正在进行，请稍候。", "UPDATE_BUSY");
+                return;
             }
-        } catch (Exception error) {
-            clearInstallReceiver();
-            call.reject("无法启动系统安装器。", error);
+            candidate = downloadedUpdate;
+            if (candidate == null) {
+                call.reject("尚未下载可安装的更新文件。", "UPDATE_INSTALL_NOT_READY");
+                return;
+            }
+            installing = true;
+            installCall = call;
+            call.setKeepAlive(true);
+            // 厂商安装器漏发最终广播时，任务仍须有结束路径，不能永久占用安装锁。
+            installDeadline = installWatchdog.schedule(() -> checkTimedOutInstall(call, candidate),
+                    INSTALL_TIMEOUT_MINUTES, TimeUnit.MINUTES);
         }
+        enqueue(call, () -> {
+            try {
+                File apk = updateFile(UPDATE_FILE);
+                verifyDownloadedFile(apk, candidate);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                        && !getContext().getPackageManager().canRequestPackageInstalls()) {
+                    finishInstall(call, false, "请先允许 ZhiWellCare 安装应用更新。", "UPDATE_INSTALL_PERMISSION_DENIED");
+                    return;
+                }
+                startInstallSession(apk, call);
+            } catch (Exception error) {
+                finishInstall(call, false, "无法启动系统安装器。", "UPDATE_INSTALL_FAILED", error);
+            }
+        });
     }
 
     @PluginMethod
     public void clearDownloadedUpdate(PluginCall call) {
-        deleteQuietly(updateFile(PART_FILE));
-        deleteQuietly(updateFile(UPDATE_FILE));
-        call.resolve();
+        synchronized (stateLock) {
+            if (installing) {
+                call.reject("系统安装确认尚未结束，请稍候。", "UPDATE_BUSY");
+                return;
+            }
+            // 先取消网络，再排队删除；正在写入的 .part 不会被并发删除。
+            ++downloadGeneration;
+            downloadedUpdate = null;
+            if (activeRequest != null) activeRequest.cancel();
+        }
+        enqueue(call, () -> {
+            deleteQuietly(updateFile(PART_FILE));
+            deleteQuietly(updateFile(UPDATE_FILE));
+            call.resolve();
+        });
     }
 
     @Override
     protected void handleOnDestroy() {
-        clearInstallReceiver();
-        executor.shutdownNow();
+        PluginCall pending;
+        synchronized (stateLock) {
+            if (destroyed) {
+                super.handleOnDestroy();
+                return;
+            }
+            destroyed = true;
+            ++downloadGeneration;
+            downloadedUpdate = null;
+            if (activeRequest != null) activeRequest.cancel();
+            pending = installCall;
+        }
+        if (pending != null) finishInstall(pending, false, "更新页面已关闭。", "UPDATE_CANCELLED");
+        // shutdown 保留队列中的收尾任务，避免 shutdownNow 丢失 Promise 的结束回调。
+        executor.execute(() -> {
+            deleteQuietly(updateFile(PART_FILE));
+            deleteQuietly(updateFile(UPDATE_FILE));
+        });
+        executor.shutdown();
+        installWatchdog.shutdownNow();
         super.handleOnDestroy();
     }
 
-    private DownloadResult download(String source, File destination) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(source).openConnection();
-        connection.setConnectTimeout(15_000);
-        connection.setReadTimeout(30_000);
-        connection.setInstanceFollowRedirects(true);
-        connection.setRequestProperty("Accept", "application/vnd.android.package-archive, application/octet-stream");
-        try {
-            int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) throw new IllegalStateException("更新服务器返回 HTTP " + status + "。");
-            // GitHub 可跳转到资产 CDN，但最终地址仍必须使用 HTTPS，禁止降级下载。
-            if (!"https".equalsIgnoreCase(connection.getURL().getProtocol())) {
-                throw new IllegalStateException("更新下载地址必须使用 HTTPS。");
+    private void startInstallSession(File apk, PluginCall call) throws Exception {
+        PackageInstaller installer = getContext().getPackageManager().getPackageInstaller();
+        PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        params.setAppPackageName(getContext().getPackageName());
+        params.setSize(apk.length());
+        int sessionId = installer.createSession(params);
+        synchronized (stateLock) {
+            if (destroyed || installCall != call) {
+                installer.abandonSession(sessionId);
+                throw new UpdateHttpClient.CancelledException();
             }
-            long totalBytes = connection.getContentLengthLong();
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            long downloadedBytes = 0;
-            long lastProgressAt = 0;
-            try (InputStream input = connection.getInputStream(); OutputStream output = new FileOutputStream(destination)) {
-                byte[] buffer = new byte[32 * 1024];
-                int count;
-                while ((count = input.read(buffer)) >= 0) {
-                    if (count == 0) continue;
-                    output.write(buffer, 0, count);
-                    digest.update(buffer, 0, count);
-                    downloadedBytes += count;
-                    long now = System.currentTimeMillis();
-                    if (now - lastProgressAt >= 200) {
-                        publishProgress(downloadedBytes, totalBytes);
-                        lastProgressAt = now;
-                    }
+            installSessionId = sessionId;
+        }
+        PackageInstaller.Session session;
+        try {
+            session = installer.openSession(sessionId);
+        } catch (Exception error) {
+            installer.abandonSession(sessionId);
+            throw error;
+        }
+        InputStream input;
+        try {
+            input = new FileInputStream(apk);
+        } catch (Exception error) {
+            session.close();
+            installer.abandonSession(sessionId);
+            throw error;
+        }
+        UpdateInstallSession.writeAndCommit(input, apk.length(), new UpdateInstallSession.Session() {
+            @Override public OutputStream openWrite(long size) throws Exception { return session.openWrite("base.apk", 0, size); }
+            @Override public void fsync(OutputStream output) throws Exception { session.fsync(output); }
+            @Override public void abandon() { installer.abandonSession(sessionId); }
+            @Override public void close() { session.close(); }
+            @Override public void commit() throws Exception {
+                synchronized (stateLock) {
+                    if (destroyed || installCall != call) throw new UpdateHttpClient.CancelledException();
+                    // 随机动作名同时保护旧 Android 上的动态接收器免受猜测广播干扰。
+                    String action = getContext().getPackageName() + ".UPDATE_INSTALL_STATUS." + sessionId + "." + UUID.randomUUID();
+                    installReceiver = createInstallReceiver(call, sessionId);
+                    registerInstallReceiver(action, installReceiver);
+                    Intent intent = new Intent(action).setPackage(getContext().getPackageName());
+                    int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags |= PendingIntent.FLAG_MUTABLE;
+                    PendingIntent status = PendingIntent.getBroadcast(getContext(), sessionId, intent, flags);
+                    // 此时 APK 写入流已经关闭，最终结果由系统状态广播决定。
+                    session.commit(status.getIntentSender());
                 }
             }
-            publishProgress(downloadedBytes, totalBytes);
-            return new DownloadResult(downloadedBytes, toHex(digest.digest()));
-        } finally {
-            connection.disconnect();
+        });
+    }
+
+    private void verifyDownloadedFile(File apk, DownloadedUpdate expected) throws Exception {
+        if (!apk.isFile() || apk.length() != expected.sizeBytes) throw new IllegalStateException("待安装 APK 文件大小已改变，请重新下载。");
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (InputStream input = new FileInputStream(apk)) {
+            byte[] buffer = new byte[32 * 1024];
+            int count;
+            while ((count = input.read(buffer)) >= 0) {
+                if (count > 0) digest.update(buffer, 0, count);
+            }
         }
+        if (!constantTimeEquals(UpdateHttpClient.hex(digest.digest()), expected.sha256)) {
+            throw new IllegalStateException("待安装 APK 摘要已改变，请重新下载。");
+        }
+        verifyArchive(apk, expected.packageName, expected.versionCode);
     }
 
     private void verifyArchive(File apk, String expectedPackageName, long expectedVersionCode) throws Exception {
@@ -239,78 +352,168 @@ public class AndroidApkUpdaterPlugin extends Plugin {
         if (archive == null) throw new IllegalStateException("下载文件不是有效 APK。");
         if (!expectedPackageName.equals(archive.packageName)) throw new IllegalStateException("APK 包名不匹配。");
         if (packageVersionCode(archive) != expectedVersionCode) throw new IllegalStateException("APK versionCode 与更新清单不一致。");
-
         PackageInfo current = currentPackageInfo(flags);
         if (expectedVersionCode <= packageVersionCode(current)) throw new IllegalStateException("APK 版本必须高于当前版本。");
-        if (!signatureDigests(current).equals(signatureDigests(archive))) {
-            throw new IllegalStateException("APK 签名证书与当前应用不一致。");
-        }
+        if (!signatureDigests(current).equals(signatureDigests(archive))) throw new IllegalStateException("APK 签名证书与当前应用不一致。");
     }
 
-    private BroadcastReceiver createInstallReceiver(PluginCall call) {
+    private BroadcastReceiver createInstallReceiver(PluginCall call, int expectedSessionId) {
         return new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
+            @Override public void onReceive(Context context, Intent intent) {
+                // 会话标识和一次性任务引用共同防止旧回调结束新任务。
+                synchronized (stateLock) {
+                    if (installCall != call || intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1) != expectedSessionId) return;
+                }
                 int status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE);
-                String message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
                 if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
-                    Intent confirmation = readConfirmationIntent(intent);
-                    if (confirmation == null) {
-                        finishInstallCall(call, false, "系统未返回安装确认页面。");
-                        return;
+                    try {
+                        Intent confirmation = readConfirmationIntent(intent);
+                        if (confirmation == null) throw new IllegalStateException("系统未返回安装确认页面。");
+                        confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                        context.startActivity(confirmation);
+                    } catch (Exception error) {
+                        finishInstall(call, false, "无法打开系统安装确认页面。", "UPDATE_INSTALL_FAILED", error);
                     }
-                    confirmation.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                    context.startActivity(confirmation);
                     return;
                 }
-                if (status == PackageInstaller.STATUS_SUCCESS) finishInstallCall(call, true, null);
-                else finishInstallCall(call, false, message == null ? "系统安装失败，状态码：" + status : message);
+                if (status == PackageInstaller.STATUS_SUCCESS) finishInstall(call, true, null, null);
+                else if (status == PackageInstaller.STATUS_FAILURE_ABORTED
+                        && !intent.hasExtra("android.content.pm.extra.DEVELOPER_VERIFICATION_FAILURE_REASON")) {
+                    // 新系统的开发者验证拒绝也是 ABORTED，不能误显示为用户取消。
+                    finishInstall(call, false, "已取消安装更新。", "UPDATE_INSTALL_CANCELLED");
+                } else {
+                    // 只公开系统状态码，避免把系统内部路径或完整错误消息传给日志。
+                    finishInstall(call, false, "系统安装失败，状态码：" + status, "UPDATE_INSTALL_FAILED");
+                }
             }
         };
     }
 
-    private void finishInstallCall(PluginCall call, boolean success, String message) {
-        clearInstallReceiver();
+    private void finishInstall(PluginCall call, boolean success, String message, String code) {
+        finishInstall(call, success, message, code, null);
+    }
+
+    private void checkTimedOutInstall(PluginCall call, DownloadedUpdate target) {
+        synchronized (stateLock) { if (installCall != call) return; }
+        try {
+            // 可能只是回调丢失；先看真实已安装版本，再决定是否报失败。
+            if (packageVersionCode(currentPackageInfo(0)) >= target.versionCode) {
+                finishInstall(call, true, null, null);
+                return;
+            }
+        } catch (Exception ignored) { /* 无法确认目标版本时走失败收尾，允许重新操作。 */ }
+        finishInstall(call, false, "系统未在规定时间返回安装结果，请重试。", "UPDATE_INSTALL_FAILED");
+    }
+
+    private void finishInstall(PluginCall call, boolean success, String message, String code, Exception error) {
+        BroadcastReceiver receiver;
+        int sessionId;
+        synchronized (stateLock) {
+            if (installCall != call) return;
+            installCall = null;
+            if (installDeadline != null) installDeadline.cancel(false);
+            installDeadline = null;
+            receiver = installReceiver;
+            installReceiver = null;
+            sessionId = installSessionId;
+            installSessionId = -1;
+            if (success) {
+                downloadedUpdate = null;
+                // 清理先入队，再开放下一下载，避免删除新任务刚写好的文件。
+                try {
+                    executor.execute(() -> {
+                        deleteQuietly(updateFile(PART_FILE));
+                        deleteQuietly(updateFile(UPDATE_FILE));
+                    });
+                } catch (RejectedExecutionException ignored) {
+                    // 销毁队列已安排缓存清理，仍须继续释放调用与安装锁。
+                }
+            }
+            installing = false;
+        }
+        if (receiver != null) {
+            try { getContext().unregisterReceiver(receiver); }
+            catch (Exception ignored) { /* Activity 已移除 Receiver 时视为清理完成。 */ }
+        }
+        if (!success && sessionId >= 0) {
+            try { getContext().getPackageManager().getPackageInstaller().abandonSession(sessionId); }
+            catch (Exception ignored) { /* 系统已经结束的会话无须再次释放。 */ }
+        }
         call.setKeepAlive(false);
         if (success) {
             JSObject result = new JSObject();
             result.put("status", "success");
             call.resolve(result);
-        } else call.reject(message);
+        } else call.reject(message, code, error);
+    }
+
+    private UpdateHttpClient httpClient() throws Exception {
+        return new UpdateHttpClient(BuildConfig.UPDATE_MANIFEST_URL, BuildConfig.UPDATE_DOWNLOAD_BASE_URL,
+                BuildConfig.UPDATE_ALLOWED_DOWNLOAD_HOSTS);
+    }
+
+    private void setActiveRequest(UpdateHttpClient client) throws Exception {
+        synchronized (stateLock) {
+            if (destroyed) throw new UpdateHttpClient.CancelledException();
+            activeRequest = client;
+        }
+    }
+
+    private void clearActiveRequest(UpdateHttpClient client) {
+        synchronized (stateLock) { if (activeRequest == client) activeRequest = null; }
+    }
+
+    private void requireCurrentDownload(long generation) throws Exception {
+        synchronized (stateLock) {
+            if (destroyed || generation != downloadGeneration) throw new UpdateHttpClient.CancelledException();
+        }
+    }
+
+    private interface UpdateTask { void run() throws Exception; }
+
+    private void enqueue(PluginCall call, UpdateTask task) {
+        try {
+            executor.execute(() -> {
+                try { task.run(); }
+                catch (Exception error) {
+                    boolean cancelled;
+                    synchronized (stateLock) { cancelled = destroyed; }
+                    call.setKeepAlive(false);
+                    String message = error.getMessage() == null ? "更新操作失败，请重试。" : error.getMessage();
+                    call.reject(message, cancelled || error instanceof UpdateHttpClient.CancelledException
+                            ? "UPDATE_CANCELLED" : "UPDATE_FAILED", error);
+                }
+            });
+        } catch (RejectedExecutionException error) {
+            synchronized (stateLock) {
+                if (installCall == call) {
+                    finishInstall(call, false, "更新页面已关闭。", "UPDATE_CANCELLED");
+                    return;
+                }
+            }
+            call.setKeepAlive(false);
+            call.reject("更新页面已关闭。", "UPDATE_CANCELLED");
+            synchronized (stateLock) { downloading = false; }
+        }
     }
 
     @SuppressWarnings("deprecation")
     private Intent readConfirmationIntent(Intent source) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return source.getParcelableExtra(Intent.EXTRA_INTENT, Intent.class);
-        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return source.getParcelableExtra(Intent.EXTRA_INTENT, Intent.class);
         return source.getParcelableExtra(Intent.EXTRA_INTENT);
     }
 
     private void registerInstallReceiver(String action, BroadcastReceiver receiver) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             getContext().registerReceiver(receiver, new IntentFilter(action), Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            getContext().registerReceiver(receiver, new IntentFilter(action));
-        }
-    }
-
-    private void clearInstallReceiver() {
-        BroadcastReceiver receiver = installReceiver;
-        installReceiver = null;
-        if (receiver == null) return;
-        try {
-            getContext().unregisterReceiver(receiver);
-        } catch (Exception ignored) {
-            // Activity 已销毁或 Receiver 已被系统移除时按清理完成处理。
-        }
+        } else getContext().registerReceiver(receiver, new IntentFilter(action));
     }
 
     private void publishProgress(long downloadedBytes, long totalBytes) {
         JSObject data = new JSObject();
         data.put("downloadedBytes", downloadedBytes);
-        data.put("totalBytes", totalBytes > 0 ? totalBytes : null);
-        data.put("percent", totalBytes > 0 ? Math.min(100, Math.round(downloadedBytes * 100f / totalBytes)) : null);
+        data.put("totalBytes", totalBytes);
+        data.put("percent", Math.min(100, Math.round(downloadedBytes * 100f / totalBytes)));
         notifyListeners("updateDownloadProgress", data);
     }
 
@@ -331,47 +534,35 @@ public class AndroidApkUpdaterPlugin extends Plugin {
 
     @SuppressWarnings("deprecation")
     private Set<String> signatureDigests(PackageInfo info) throws Exception {
-        Signature[] signatures;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.signingInfo != null) {
-            signatures = info.signingInfo.getApkContentsSigners();
-        } else {
-            signatures = info.signatures;
-        }
+        Signature[] signatures = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && info.signingInfo != null
+                ? info.signingInfo.getApkContentsSigners() : info.signatures;
         if (signatures == null || signatures.length == 0) throw new IllegalStateException("APK 不包含签名证书。");
         Set<String> result = new HashSet<>();
-        for (Signature signature : signatures) {
-            result.add(toHex(MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())));
-        }
+        for (Signature signature : signatures) result.add(UpdateHttpClient.hex(MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())));
         return result;
     }
 
-    private static void copy(InputStream input, OutputStream output) throws Exception {
-        byte[] buffer = new byte[32 * 1024];
-        int count;
-        while ((count = input.read(buffer)) >= 0) {
-            if (count > 0) output.write(buffer, 0, count);
-        }
-    }
-
-    private static String toHex(byte[] bytes) {
-        StringBuilder value = new StringBuilder(bytes.length * 2);
-        for (byte item : bytes) value.append(String.format(Locale.ROOT, "%02x", item & 0xff));
-        return value.toString();
+    private static boolean positiveSafeInteger(Double value) {
+        return value != null && Double.isFinite(value) && value > 0 && value <= 9_007_199_254_740_991d && Math.rint(value) == value;
     }
 
     private static boolean constantTimeEquals(String left, String right) {
-        return MessageDigest.isEqual(left.getBytes(), right.getBytes());
+        return MessageDigest.isEqual(left.getBytes(StandardCharsets.US_ASCII), right.getBytes(StandardCharsets.US_ASCII));
     }
 
     private static void deleteQuietly(File file) {
-        if (file.exists()) file.delete();
+        if (file != null && file.exists()) file.delete();
     }
 
-    private static class DownloadResult {
+    /** 安装前保留并重新检查这次下载对应的候选身份，不能仅检查文件存在。 */
+    private static final class DownloadedUpdate {
+        final String packageName;
+        final long versionCode;
         final long sizeBytes;
         final String sha256;
-
-        DownloadResult(long sizeBytes, String sha256) {
+        DownloadedUpdate(String packageName, long versionCode, long sizeBytes, String sha256) {
+            this.packageName = packageName;
+            this.versionCode = versionCode;
             this.sizeBytes = sizeBytes;
             this.sha256 = sha256;
         }

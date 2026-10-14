@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "android": {
+    "applicationId": "com.zhiwellcare.app",
+    "keyStoreType": "PKCS12",
+    "keyAlias": "zhiwellcare",
+    "certificateMd5": "4ee1e429da8e011eb75b49ebdb03b6a4",
+    "certificateSha1": "e3f49e91e89d0e84ae8029b490860c0e64d5d6f1",
+    "certificateSha256": "cdd71d525d47ce609fd5597b8d2ecd68389bef5295e8770a1a2cb240dceb7ec3"
+  },
+  "tauri": {
+    "publicKey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFDNEMwQzkwQzUzQkQzMDgKUldRSTB6dkZrQXhNckJ1bEZvRWlMRlF0K0hrZDl6V3BPdkNadWpOZ2tlYmZKNkdEQjk0cXFsd3MK"
+  }
+}
