@@ -102,7 +102,11 @@ stable `0.1.0/code 1` 与 staging `0.1.0/code 1`、`0.1.1/code 2` 三套候选�
 
 两套归档 `release-output/staging/0.1.0-20261014-local-verification/`、`release-output/staging/0.1.1-20261014-local-verification/` 各自的 `private/remote-validation-report.json`（`local-manifests`）和 `private/remote-manifests-validation-report.json`（`remote-manifests`）共四份报告均为 `verified:true`。每轮均完整匿名 GET 三份附件并核对最终字节、大小、SHA-256、APK 真实版本和正式证书、Windows EXE 版本及 Tauri 签名；远端清单模式还真实读取两份 Raw JSON，与该版本归档一致。`0.1.0` 与 `0.1.1` 的远端清单验收分别于 UTC `2026-10-14T17:33:42.737Z`、`2026-10-14T17:36:30.659Z` 通过。健康探针和官方 CDN 跳转的先行检查已有本项目六份实际附件的完整验收补足。
 
-本机 Windows staging `0.1.0` 已完成首次安装，界面控制工具未显示授权提示并超时，已请求用户协助准备训练记录；`0.1.0 → 0.1.1` 的实际在线升级、安装退出/重启及新增训练记录和设置保留仍待验证。最新只读 ADB 检查仍为零台设备，Android 等待连接目标设备后执行来源授权、取消、低空间、重启、BLE/训练回归及双版本升级。stable 正式通道尚未发布。staging 与 stable 使用相同产品名和应用标识，共用安装及用户数据目录，测试结束后的卸载、降级或数据清理应按已确认的具体范围处理。
+Windows staging `0.1.0 → 0.1.1` 的实际应用内升级主链已通过。用户在 `0.1.0` 新建训练记录、保存“手动检查”，在界面检查到正确版本及 staging 说明后完成更新，并确认新版训练记录仍在、更新方式仍为“手动检查”，再次检查提示已是最新版本。这些界面与数据保留结论来自用户实际操作反馈。
+
+独立的本机只读文件与进程核对提供佐证：已安装应用 EXE 的 ProductVersion 为 `0.1.1`，SHA-256 为 `c62f64dc7f5c0fd0b7ac4d290c334c7d2d64f4d4cfb1e05b5e29e732cc4b7d02`，新版进程于 `2026-10-15 11:19:14 +08:00` 启动。详细安装路径、进程信息和用户确认项保存在本机 `release-output/private/device-upgrade-validation.json`。
+
+Windows 的取消、低空间、后台或训练期间禁止安装等失败与限制场景，以及 BLE/训练业务回归仍未完成实机验收。最新只读 ADB 检查仍为零台设备，Android 等待连接目标设备后执行来源授权、取消、低空间、重启、BLE/训练回归及双版本升级。stable 正式通道尚未发布。staging 与 stable 使用相同产品名和应用标识，共用安装及用户数据目录，测试结束后的卸载、降级或数据清理应按已确认的具体范围处理。
 
 依赖审计原始记录保存在 release-output/private/dependency-audit.json 和 dependency-audit-production.json；八个受影响依赖包及生产分类的 source-map-js 高危项尚未修补。本轮未更改原依赖版本，签名环境隔离只降低构建和测试接触秘密的风险。具体剩余风险应结合实际打包内容评估。
 
