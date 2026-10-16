@@ -204,8 +204,8 @@ final class UpdateHttpClient {
                 if (cancelled) throw new CancelledException();
                 if (timedOut) throw new RequestException("更新请求超时，请稍后重试。");
                 if (error instanceof IOException && !(error instanceof RequestException)) {
-                    // 系统网络异常可能带完整 URL，只返回不含查询参数的描述。
-                    throw new RequestException("更新 HTTPS 连接失败，请检查网络后重试。");
+                    // 统一网络提示，不回传可能包含完整 URL 的系统异常。
+                    throw new RequestException("当前网络状况不佳，请检查网络后重试");
                 }
                 throw error;
             }
