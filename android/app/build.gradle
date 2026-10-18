@@ -1,5 +1,10 @@
 apply plugin: 'com.android.application'
 
+// 公开配置由同步脚本生成；原生请求只接受本次构建确定的更新地址。
+def updateConfig = new groovy.json.JsonSlurper().parse(rootProject.file('update-config.json'))
+def publicSigning = new groovy.json.JsonSlurper().parse(rootProject.file('../release-signing.json'))
+def buildConfigString = { value -> groovy.json.JsonOutput.toJson(value.toString()) }
+
 // Release 密钥只从进程环境读取，避免密码进入源码或 Gradle 配置文件。
 def releaseKeystorePath = System.getenv('REHAB_ANDROID_KEYSTORE_PATH')
 def releaseStorePassword = System.getenv('REHAB_ANDROID_STORE_PASSWORD')
@@ -10,12 +15,17 @@ def releaseSigningConfigured = releaseKeystorePath && releaseStorePassword && re
 android {
     namespace = "com.zhiwellcare.app"
     compileSdk = rootProject.ext.compileSdkVersion
+    buildFeatures { buildConfig true }
     defaultConfig {
         applicationId "com.zhiwellcare.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "0.1.0"
+        // JS 桥接和原生层均使用相同入口，不允许网页传入任意下载站点。
+        buildConfigField 'String', 'UPDATE_MANIFEST_URL', buildConfigString(updateConfig.manifestUrl)
+        buildConfigField 'String', 'UPDATE_DOWNLOAD_BASE_URL', buildConfigString(updateConfig.downloadBaseUrl)
+        buildConfigField 'String', 'UPDATE_ALLOWED_DOWNLOAD_HOSTS', buildConfigString(updateConfig.allowedDownloadHosts.join(','))
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -25,6 +35,8 @@ android {
     }
     signingConfigs {
         release {
+            // 正式密钥沿用用户 PKCS12；不接受开发者个人证书作为替代。
+            storeType 'PKCS12'
             if (releaseSigningConfigured) {
                 storeFile file(releaseKeystorePath)
                 storePassword releaseStorePassword
@@ -42,13 +54,42 @@ android {
     }
 }
 
-// 禁止误生成无法覆盖安装的 unsigned Release 包，Debug 任务不受影响。
+// 只有生成、签名或安装正式包才读取私钥；Release 单元测试和编译不需要签名。
+def releaseSigningTasks = [
+    'validateSigningRelease', 'packageRelease', 'packageReleaseBundle', 'signReleaseBundle',
+    'assembleRelease', 'bundleRelease', 'installRelease'
+] as Set
 gradle.taskGraph.whenReady { graph ->
     def releaseRequested = graph.allTasks.any { task ->
-        task.project == project && task.name.toLowerCase().contains('release')
+        task.project == project && releaseSigningTasks.contains(task.name)
     }
     if (releaseRequested && !releaseSigningConfigured) {
         throw new GradleException('Release 签名环境变量未配置，请设置 REHAB_ANDROID_KEYSTORE_PATH、REHAB_ANDROID_STORE_PASSWORD 和 REHAB_ANDROID_KEY_PASSWORD。')
+    }
+    if (releaseRequested) {
+        // 构建前读取证书 DER 摘要，身份不同立即停止，不能静默登记新证书。
+        if (releaseKeyAlias != publicSigning.android.keyAlias || publicSigning.android.applicationId != android.defaultConfig.applicationId) {
+            throw new GradleException('正式包名或签名别名不符合团队签名基准。')
+        }
+        try {
+            def keystore = java.security.KeyStore.getInstance('PKCS12')
+            file(releaseKeystorePath).withInputStream { stream -> keystore.load(stream, releaseStorePassword.toCharArray()) }
+            if (!keystore.isKeyEntry(releaseKeyAlias)) throw new GradleException('密钥库缺少指定私钥条目。')
+            def cert = keystore.getCertificate(releaseKeyAlias)
+            if (cert == null) throw new GradleException('密钥库缺少指定公共证书。')
+            ['MD5': 'certificateMd5', 'SHA-1': 'certificateSha1', 'SHA-256': 'certificateSha256'].each { algorithm, field ->
+                def actual = java.security.MessageDigest.getInstance(algorithm).digest(cert.encoded).encodeHex().toString()
+                if (actual != publicSigning.android[field]) throw new GradleException('正式签名证书身份不匹配：' + algorithm)
+            }
+            // 验证私钥密码能解锁；不把密码或底层异常写入日志。
+            if (!(keystore.getKey(releaseKeyAlias, releaseKeyPassword.toCharArray()) instanceof java.security.PrivateKey)) {
+                throw new GradleException('指定条目不是可用的签名私钥。')
+            }
+        } catch (GradleException identityError) {
+            throw identityError
+        } catch (Exception ignored) {
+            throw new GradleException('正式密钥库无法读取，请核对 PKCS12 文件和本机签名密码。')
+        }
     }
 }
 

@@ -31,4 +31,11 @@ describe('TauriUpdateProvider', () => {
     const provider = new TauriUpdateProvider(async () => null, async () => '0.8.0')
     await expect(provider.checkForUpdate()).resolves.toBeNull()
   })
+
+  it('Windows 初始内部版本通过统一展示函数映射为 0.1', async () => {
+    // 仅测试展示映射；下载和安装仍由官方 Update 资源负责。
+    const update = { currentVersion: '0.0.9', version: '0.1.0', close: vi.fn() } as unknown as Update
+    const provider = new TauriUpdateProvider(async () => update, async () => '0.0.9')
+    await expect(provider.checkForUpdate()).resolves.toMatchObject({ latestVersion: '0.1.0', displayVersion: '0.1' })
+  })
 })

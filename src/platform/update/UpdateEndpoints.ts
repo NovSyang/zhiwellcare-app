@@ -1,5 +1,7 @@
+// 此文件由 release-config.json 生成；Windows 实际入口还需同步 Tauri 配置。
+export const UPDATE_CHANNEL: 'stable' | 'staging' = 'stable'
+
 export const UPDATE_ENDPOINTS = {
-  // 桌面端和 Android 都从当前项目仓库的 GitHub Release 获取更新清单。
-  tauri: 'https://github.com/NovSyang/zhiwellcare-app/releases/latest/download/latest.json',
-  android: 'https://github.com/NovSyang/zhiwellcare-app/releases/latest/download/android-latest.json',
+  tauri: 'https://gitee.com/Syang03/zhiwell-care/raw/main/channels/stable/latest.json',
+  android: 'https://gitee.com/Syang03/zhiwell-care/raw/main/channels/stable/android-latest.json',
 } as const

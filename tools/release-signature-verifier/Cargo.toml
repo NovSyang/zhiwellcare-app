@@ -1,0 +1,10 @@
+[package]
+name = "release-signature-verifier"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# 与应用锁定的 updater 使用同一套 Minisign 验证实现。
+[dependencies]
+minisign-verify = "=0.2.5"
+base64 = "=0.22.1"

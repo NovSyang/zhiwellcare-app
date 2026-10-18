@@ -1,52 +1,31 @@
-import { createHash } from 'node:crypto'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { basename, dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { hashFile, isMain, parseArgs, readJson, requireArgs, root, validateAssetUrl, validatePublishedAt, validateVersionFile, writeJson } from './release/common.mjs'
+import { verifyApk } from './release/check-inputs.mjs'
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-// 清单中的摘要和大小由最终签名 APK 直接计算，避免人工填写错误。
-const options = parseArgs(process.argv.slice(2))
-const release = JSON.parse(await readFile(resolve(root, 'release-version.json'), 'utf8'))
-const apkInput = options.apk ?? 'android/app/build/outputs/apk/release/app-release.apk'
-const apkPath = resolve(root, apkInput)
-const apkBytes = await readFile(apkPath)
-const apkStat = await stat(apkPath)
-const apkName = basename(apkPath)
-const sha256 = createHash('sha256').update(apkBytes).digest('hex')
-const notes = await readNotes(options.notes)
-const publishedAt = options.publishedAt ?? new Date().toISOString()
-const output = resolve(root, options.output ?? 'release-output/android-latest.json')
-
-const manifest = {
-  schemaVersion: 1,
-  version: release.productVersion,
-  displayVersion: release.displayVersion,
-  versionCode: release.android.versionCode,
-  publishedAt,
-  notes,
-  apk: {
-    url: `https://github.com/NovSyang/zhiwellcare-app/releases/download/v${release.productVersion}/${encodeURIComponent(apkName)}`,
-    sha256,
-    size: apkStat.size,
-  },
-}
-
-await mkdir(dirname(output), { recursive: true })
-await writeFile(output, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
-await writeFile(resolve(dirname(output), 'SHA256SUMS.txt'), `${sha256}  ${apkName}\n`, 'utf8')
-console.log(`Android 更新清单已生成：${output}`)
-
-async function readNotes(path) {
-  if (!path) return []
-  return (await readFile(resolve(root, path), 'utf8')).split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
-}
-
-function parseArgs(args) {
-  const result = {}
-  for (let index = 0; index < args.length; index += 2) {
-    const key = args[index]?.replace(/^--/, '').replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())
-    if (!key || index + 1 >= args.length) throw new Error(`发布参数无效：${args[index] ?? ''}`)
-    result[key] = args[index + 1]
+/** 清单必须来自最终验签 APK，摘要列表由两端完成后的聚合步骤统一生成。 */
+export async function generateAndroidManifest(options) {
+  requireArgs(options, ['apk', 'apk-url', 'version-file', 'notes', 'published-at', 'output'])
+  const release = validateVersionFile(await readJson(options['version-file']))
+  const config = await readJson(options.config ?? 'release-config.json')
+  const signing = await readJson(options.signing ?? 'release-signing.json')
+  validateAssetUrl(options['apk-url'], config, { version: release.productVersion, channel: options.channel ?? config.defaultChannel, platform: 'android' })
+  validatePublishedAt(options['published-at'])
+  const apk = resolve(root, options.apk)
+  await verifyApk(apk, release, signing)
+  const digest = await hashFile(apk)
+  const notes = (await readFile(resolve(root, options.notes), 'utf8')).split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  const manifest = {
+    schemaVersion: 1, version: release.productVersion, displayVersion: release.displayVersion,
+    versionCode: release.android.versionCode, publishedAt: options['published-at'], notes,
+    apk: { url: options['apk-url'], ...digest },
   }
-  return result
+  await writeJson(resolve(root, options.output), manifest)
+  return manifest
+}
+
+if (isMain(import.meta.url)) {
+  const options = parseArgs(process.argv.slice(2), ['apk', 'apk-url', 'version-file', 'notes', 'published-at', 'output', 'config', 'signing', 'channel'])
+  await generateAndroidManifest(options)
+  console.log('Android 更新清单已由最终验签产物生成。')
 }

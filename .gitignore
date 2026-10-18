@@ -64,3 +64,7 @@ backend/coverage.out
 
 # 发布目录包含打包产物，不纳入源码版本控制。
 release-output/
+
+# 本机路径和诊断报告不得随公开配置提交。
+release.local.json
+tools/release-signature-verifier/target/

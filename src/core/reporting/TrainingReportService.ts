@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import type { TrainingRecord } from '../training/TrainingRecord'
 import type { ITrainingReportTransport } from './TrainingReport'
 import { toReportPayload } from './TrainingReport'
+import { APP_PRODUCT_VERSION } from '../version/AppVersion'
 
 /**
  * 训练记录上报服务：训练完成并本地入库后调用 report()，
@@ -18,7 +19,8 @@ export class TrainingReportService {
   }
 
   async report(record: TrainingRecord): Promise<void> {
-    const payload = toReportPayload(record, appVersion())
+    // 上报保留完整内部版本，与最终构建使用的发布元数据一致。
+    const payload = toReportPayload(record, APP_PRODUCT_VERSION)
     try {
       const result = await this.transport.submit(payload)
       if (result.accepted && result.queueLength !== undefined) {
@@ -37,10 +39,4 @@ export class TrainingReportService {
       this.pendingCount.value = 0
     }
   }
-}
-
-/** 客户端版本：优先取构建元数据，否则从 package.json 同源的 release 标识读取。 */
-function appVersion(): string {
-  const fromEnv = import.meta.env.VITE_APP_VERSION as string | undefined
-  return fromEnv || '0.1.0'
 }

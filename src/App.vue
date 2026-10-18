@@ -114,7 +114,8 @@ onMounted(async () => {
   // 更新检查延后执行，不阻塞首屏、Profile 加载或 BLE 自动连接。
   startupUpdateTimer = window.setTimeout(() => { void updateService.handleStartup() }, 3_000)
   unsubscribeUpdateLifecycle = appLifecycleService.onActiveChanged((active) => {
-    if (active) void updateService.refreshInstallPermission()
+    // 后台变化立即通知更新服务，避免权限检查期间在后台启动安装器。
+    void updateService.setAppActive(active)
   })
   // Android Back：训练中先确认，普通页面继续遵守 Vue Router 历史。
   unsubscribeBack = backButtonService.onBack(({ canGoBack }) => {

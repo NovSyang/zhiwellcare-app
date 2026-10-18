@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "publishRepository": "https://gitee.com/Syang03/zhiwell-care.git",
+  "publishBranch": "main",
+  "defaultChannel": "stable",
+  "allowedDownloadHosts": ["gitee.com", "raw.giteeusercontent.com", "foruda.gitee.com"],
+  "channels": {
+    "stable": {
+      "androidManifestUrl": "https://gitee.com/Syang03/zhiwell-care/raw/main/channels/stable/android-latest.json",
+      "tauriManifestUrl": "https://gitee.com/Syang03/zhiwell-care/raw/main/channels/stable/latest.json"
+    },
+    "staging": {
+      "androidManifestUrl": "https://gitee.com/Syang03/zhiwell-care/raw/main/channels/staging/android-latest.json",
+      "tauriManifestUrl": "https://gitee.com/Syang03/zhiwell-care/raw/main/channels/staging/latest.json"
+    }
+  }
+}
