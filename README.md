@@ -76,6 +76,8 @@ npm run android:build:debug  # Android APK（BLE 走 Capacitor bluetooth-le）
 ```
 环境变量参考 `.env.example`（目录/上报/签名密钥均不落库）。
 
+统一版本、正式签名、Gitee 在线更新及实机验收进度见 [V0.1 发布说明](docs/release-v0.1.md)。截至 2026-10-18，staging 已发布至 `0.1.3/code 4`；实机验收按用户要求暂停，stable 尚未发布，剩余门禁见该文档。
+
 ## 七、目录速览
 
 ```
