@@ -54,10 +54,14 @@ android {
     }
 }
 
-// 禁止误生成无法覆盖安装的 unsigned Release 包，Debug 任务不受影响。
+// 只有生成、签名或安装正式包才读取私钥；Release 单元测试和编译不需要签名。
+def releaseSigningTasks = [
+    'validateSigningRelease', 'packageRelease', 'packageReleaseBundle', 'signReleaseBundle',
+    'assembleRelease', 'bundleRelease', 'installRelease'
+] as Set
 gradle.taskGraph.whenReady { graph ->
     def releaseRequested = graph.allTasks.any { task ->
-        task.project == project && task.name.toLowerCase().contains('release')
+        task.project == project && releaseSigningTasks.contains(task.name)
     }
     if (releaseRequested && !releaseSigningConfigured) {
         throw new GradleException('Release 签名环境变量未配置，请设置 REHAB_ANDROID_KEYSTORE_PATH、REHAB_ANDROID_STORE_PASSWORD 和 REHAB_ANDROID_KEY_PASSWORD。')

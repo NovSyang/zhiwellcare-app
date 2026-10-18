@@ -106,6 +106,15 @@ export function validateManifests(android, tauri, release, config, channel = con
   return windows
 }
 
+/** 完整清单和实际签名地址共同绑定；仅调整 JSON 键顺序不会改变语义摘要。 */
+export function manifestBindingSha256(android, tauri, signatureUrl = `${tauri?.platforms?.['windows-x86_64']?.url}.sig`) {
+  const canonical = (value) => Array.isArray(value) ? value.map(canonical)
+    : value !== null && typeof value === 'object'
+      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]))
+      : value
+  return createHash('sha256').update(JSON.stringify(canonical({ schemaVersion: 1, android, tauri, signatureUrl }))).digest('hex')
+}
+
 /** 可用本地清单验证已上传附件；只有 --remote-manifests 才读取正式通道指针。 */
 export async function verifyPublishedAssets(options) {
   let reportPath
@@ -174,7 +183,8 @@ async function verifyPublishedAssetsInternal(options) {
     if ((await readFile(join(temporary, sigName), 'utf8')).trim() !== windows.signature) throw new Error('远端 EXE.sig 与清单签名不同。')
     await verifyApk(join(temporary, apkName), release, signing)
     await verifyWindows(join(temporary, exeName), join(temporary, sigName), release, signing)
-    const report = { schemaVersion: 1, verified: true, channel: options.channel, version: release.productVersion, mode: options['remote-manifests'] ? 'remote-manifests' : 'local-manifests', checkedAt: new Date().toISOString(), assets }
+    // 报告同时绑定内容和访问地址，后续改清单必须重新做完整远端验收。
+    const report = { schemaVersion: 1, verified: true, channel: options.channel, version: release.productVersion, mode: options['remote-manifests'] ? 'remote-manifests' : 'local-manifests', checkedAt: new Date().toISOString(), assets, manifestBindingSha256: manifestBindingSha256(android, tauri, signatureUrl) }
     if (options.output) await writeJson(resolve(root, options.output), report)
     return report
   } finally {

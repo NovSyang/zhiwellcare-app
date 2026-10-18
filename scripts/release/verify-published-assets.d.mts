@@ -49,10 +49,13 @@ export interface PublishedAssetsReport {
   mode: 'remote-manifests' | 'local-manifests'
   checkedAt: string
   assets: PublicAsset[]
+  /** 完整两端清单和实际下载签名地址的语义摘要，防止沿用旧成功报告。 */
+  manifestBindingSha256: string
 }
 
 export function anonymousGet(url: string, options: AnonymousGetOptions & { output: string }): Promise<AnonymousGetResult & { bytes: undefined }>
 export function anonymousGet(url: string, options: AnonymousGetOptions & { output?: undefined }): Promise<AnonymousGetResult & { bytes: Buffer }>
 export function anonymousGet(url: string, options: AnonymousGetOptions): Promise<AnonymousGetResult>
 export function validateManifests(android: unknown, tauri: unknown, release: unknown, config: unknown, channel?: string): WindowsUpdateAsset
+export function manifestBindingSha256(android: unknown, tauri: unknown, signatureUrl?: string): string
 export function verifyPublishedAssets(options: VerifyPublishedAssetsOptions): Promise<PublishedAssetsReport>

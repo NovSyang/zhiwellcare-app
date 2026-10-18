@@ -6,6 +6,7 @@ import release from '../release-version.json'
 import signing from '../release-signing.json'
 import { assertPublicText, checkPublicTree } from '../scripts/release/check-public-staging.mjs'
 import { stagePublicFiles } from '../scripts/release/stage-public-files.mjs'
+import { manifestBindingSha256 } from '../scripts/release/verify-published-assets.mjs'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -33,7 +34,8 @@ async function candidate(parent: string, channel: 'stable' | 'staging', runId = 
   await writeFile(join(folder, 'release-notes.md'), '公开版本说明')
   await writeFile(join(folder, 'SHA256SUMS.txt'), assets.map(({ name, sha256 }) => `${sha256}  ${name}\n`).join(''))
   const report = join(parent, `${channel}-${runId}-report.json`)
-  await writeFile(report, JSON.stringify({ verified: true, version: info.version, channel, assets }))
+  // 测试报告绑定这份候选内容，不代表夹具执行过网络下载或真实验签。
+  await writeFile(report, JSON.stringify({ verified: true, version: info.version, channel, assets, manifestBindingSha256: manifestBindingSha256(android, desktop) }))
   return { target: join(parent, 'publish'), 'public-dir': folder, channel, 'verification-report': report }
 }
 
@@ -57,6 +59,18 @@ describe('验证与正式快照隔离', () => {
     await stagePublicFiles(await candidate(parent, 'staging', 'run-02'))
     const files = await checkPublicTree(join(parent, 'publish'))
     for (const id of ['run-01', 'run-02']) expect(files).toContain(`versions/staging/test-v${release.productVersion}-${id}/latest.json`)
+  })
+
+  it('同版本 staging 改成未验收的运行标签时拒绝旧成功报告', async () => {
+    // 同版本各批次文件名相同，只有 URL 标签变化也必须重新验收。
+    const parent = await mkdtemp(join(tmpdir(), 'zhiwellcare-snapshot-'))
+    directories.push(parent)
+    const options = await candidate(parent, 'staging', 'run-01')
+    for (const name of ['android-latest.json', 'latest.json']) {
+      const path = join(options['public-dir'], name)
+      await writeFile(path, (await readFile(path, 'utf8')).replaceAll('-run-01/', '-run-02/'))
+    }
+    await expect(stagePublicFiles(options)).rejects.toThrow('验收报告')
   })
 
   it('拒绝外层 Base64 私钥，同时接受公开公钥与正常 Tauri 签名标记', () => {

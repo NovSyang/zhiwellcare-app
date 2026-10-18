@@ -4,7 +4,7 @@ import { basename, join, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import release from '../release-version.json'
-import { anonymousGet, verifyPublishedAssets } from '../scripts/release/verify-published-assets.mjs'
+import { anonymousGet, manifestBindingSha256, verifyPublishedAssets } from '../scripts/release/verify-published-assets.mjs'
 import { stagePublicFiles } from '../scripts/release/stage-public-files.mjs'
 
 const temporary: string[] = []
@@ -153,11 +153,21 @@ async function reportFixture() {
   await writeFile(join(publicDir, 'SHA256SUMS.txt'), assets.map(({ name, sha256 }) => `${sha256}  ${name}\n`).join(''))
   const report = join(value, 'remote-report.json')
   // 模拟磁盘上遗留的旧成功报告，验证新操作会先将其撤销。
-  await writeFile(report, JSON.stringify({ schemaVersion: 1, verified: true, version: info.version, channel: info.channel, assets }))
+  await writeFile(report, JSON.stringify({ schemaVersion: 1, verified: true, version: info.version, channel: info.channel, assets, manifestBindingSha256: manifestBindingSha256(android, tauri) }))
   return { value, report, publicDir, options: { channel: 'stable', 'public-dir': publicDir, 'artifacts-dir': artifactsDir, output: report } }
 }
 
 describe('远端验收报告不能复用旧成功', () => {
+  it('完整 JSON 语义绑定忽略对象键顺序，并包含实际签名下载地址', () => {
+    // 对象键顺序不影响 JSON 语义；数组顺序、字段值和实际下载地址仍必须一致。
+    const android = { notes: ['a', 'b'], apk: { url: 'https://gitee.com/a.apk', size: 1 } }
+    const tauri = { version: '0.1.0', platforms: { 'windows-x86_64': { url: 'https://gitee.com/a.exe', signature: 'test' } } }
+    const reordered = { apk: { size: 1, url: 'https://gitee.com/a.apk' }, notes: ['a', 'b'] }
+    expect(manifestBindingSha256(android, tauri)).toBe(manifestBindingSha256(reordered, tauri))
+    expect(manifestBindingSha256(android, tauri)).not.toBe(manifestBindingSha256(android, tauri, 'https://gitee.com/another.sig'))
+    expect(manifestBindingSha256(android, tauri)).not.toBe(manifestBindingSha256({ ...android, notes: ['b', 'a'] }, tauri))
+  })
+
   it('必填参数检查失败也撤销旧报告', async () => {
     const fixture = await reportFixture()
     await expect(verifyPublishedAssets({ ...fixture.options, 'public-dir': '' })).rejects.toThrow('缺少参数')

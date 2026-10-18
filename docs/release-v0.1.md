@@ -88,6 +88,8 @@ staging Release 使用 `test-v<version>-<RunId>` 标签，附件文件名带 `st
 
 StagePublic 只复制五份白名单资料，检查目标真实路径，拒绝源码、Keys、危险祖先/子目录、符号链接、私钥（包含 Base64 编码的 Minisign 私钥标记）、环境文件、本机报告、错通道及变更过的不可变快照。它只做暂存和差异展示；正式 commit、push、标签、Release 及附件上传由审核过的发布动作完成。通道清单发布后，再运行 `VerifyRemote -RemoteManifests`，核对实际远端 JSON 与本地预期内容，以及完整附件。
 
+远端成功报告还绑定两端完整清单及实际签名附件 URL 的语义摘要；只调整 JSON 对象键顺序不改变摘要，下载地址、签名、发布时间或说明变化都会使旧报告失效。StagePublic 拒绝缺少该绑定的旧报告，必须重新执行 VerifyRemote，不能手动补写成功字段。旧报告仍保留为对应历史轮次的验收证据。目标已有两端通道指针时，暂存还会检查版本和 Android code 不回退；版本推进要求两者都递增，半套或矛盾指针先阻断，完整候选的重复暂存及同版本独立 staging 快照仍可使用。
+
 ## 截至 2026-10-18 的交付与暂停状态
 
 用户要求实机进度截至 APK 下载中断测试，暂停“恢复网络后重新下载”及后续手机操作，并先提交代码和说明。以下是本次交付快照；后面的分轮记录保留各阶段当时的结果，不能据此判断当前指针或全部验收已通过。
@@ -129,6 +131,10 @@ StagePublic 只复制五份白名单资料，检查目标真实路径，拒绝�
 本机原始证据在被 Git 忽略的 `release-output/private/remaining-device-acceptance.json`、`remaining-device-report.md`、`remaining-device-receipt.json`、`remaining-candidate-validation.json`、`remaining-staging-publication.json`；本批两份远端报告在 `release-output/staging/0.1.3-20261016-remaining-device-qa/private/`。这些本机文件、安装包、私钥、密码及本机路径配置不随源码提交。本节公开的是必要结果、摘要和剩余门禁。
 
 stable 继续保持未发布。已有本地 stable 归档早于最新网络提示改动，后续即使实机全部通过，也必须先基于最新源码重新构建、验签并完成正式发布前检查，不能直接上传旧归档。
+
+合并前的源码审核另发现并修复了发布工具的报告绑定缺口：旧报告原先只比较附件摘要，候选改成另一 staging 标签或改写 Windows 签名后仍可能被使用。新增回归先在旧实现复现，再随清单绑定修复通过；同时补充目标指针的防回退及双端递增检查。另将原有 Gradle 正式签名门禁收窄到实际 Release 打包任务，使普通单元测试不需要正式私钥，Release APK/AAB 在缺密钥时仍拒绝生成。该轮变更发布工具、构建门禁及测试，没有重新签包、修改现有 Gitee 指针或推进实机验收，`0.1.3` 产物仍对应上述原始源码快照。将源码合并 main 不代表批准 stable 发布。
+
+修复后新增十二项发布门禁回归，全量 75 文件、413 项测试及前端构建通过。Android app 在无签名环境下 Debug/Release 各二十项单测通过，Android Release APK/AAB 的任务图检查仍因缺密钥而拒绝。根级聚合 `test --offline` 随后因第三方 Capacitor 自测缺少 JSON/Mockito 离线依赖而中止，该聚合命令不计作通过；项目 app 的测试结果单独记录，不与第三方库自测混算。
 
 ## 历史验证记录与发布门禁
 
