@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>应用下载｜智为康乐 ZhiWellCare</title>
+  <meta name="description" content="从智为康乐官网下载 Android 与 Windows 应用，扫描二维码即可在手机上打开下载页。">
+  <meta name="robots" content="index,follow">
+  <!-- 二维码指向固定下载页，更新版本时无需更换二维码。 -->
+  <link rel="canonical" href="{{DOWNLOAD_PAGE_URL}}">
+  <link rel="icon" href="/assets/img/ph-product-1.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/css/styles.css?v=91ef964ff1">
+  <link rel="stylesheet" href="/assets/app-download/download.css?v={{ASSET_VERSION}}">
+  <script src="/assets/app-download/download.js?v={{ASSET_VERSION}}" defer></script>
+</head>
+<body class="download-page">
+  <!-- 沿用官网品牌与导航；本站页面使用根路径，避免下载地址影响跳转。 -->
+  <header class="site-header">
+    <div class="container">
+      <nav class="nav" aria-label="主导航">
+        <a class="brand" href="/index.html" aria-label="智为康乐 首页">
+          <span class="brand__mark" aria-hidden="true"><img src="/assets/img/logo-round.jpg?v=91ef964ff1" alt="" width="44" height="44"></span>
+          <span class="brand__text"><span class="brand__en">ZhiWellCare</span><span class="brand__cn">智为康乐</span></span>
+        </a>
+        <ul class="nav__menu" id="navMenu">
+          <li><a class="nav__link" data-nav="index" href="/index.html">首页</a></li>
+          <li><a class="nav__link" data-nav="about" href="/about.html">关于我们</a></li>
+          <li><a class="nav__link" data-nav="products" href="/products.html">产品中心</a></li>
+          <li><a class="nav__link" data-nav="home-care" href="/home-care.html">上门康训</a></li>
+          <li><a class="nav__link" data-nav="solutions" href="/solutions.html">解决方案</a></li>
+          <li><a class="nav__link" data-nav="news" href="/news.html">新闻资讯</a></li>
+          <li><a class="nav__link" data-nav="support" href="/support.html">资料中心</a></li>
+          <li><a class="nav__link is-active" data-nav="download" href="/download.html" aria-current="page">应用下载</a></li>
+          <li><a class="nav__link" data-nav="contact" href="/contact.html">联系我们</a></li>
+        </ul>
+        <a class="btn btn--primary btn--sm nav__cta" href="/contact.html">立即咨询</a>
+        <button class="nav__toggle" id="navToggle" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="navMenu"><span></span></button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="download-hero" aria-labelledby="download-title">
+      <div class="container download-hero-inner">
+        <div class="download-intro">
+          <span class="eyebrow">智为康乐 · 应用下载</span>
+          <h1 class="h1" id="download-title">把训练体验<br>带到你的设备上</h1>
+          <p class="download-intro-text">选择适合设备的版本，下载智为康乐应用。</p>
+          <div class="download-version-row"><span class="download-channel">{{CHANNEL_LABEL}}</span><span>v{{VERSION}}</span><span>{{PUBLISHED_DATE}} 发布</span></div>
+          <p class="download-preview-notice">当前为预览体验版，可体验本地训练；账号登录与云端服务暂未开放。</p>
+          <a class="download-text-link" href="#download-packages">选择设备，开始下载 <span aria-hidden="true">↓</span></a>
+        </div>
+        <aside class="download-qr-card" aria-label="手机扫码下载">
+          <p class="download-qr-title">手机扫一扫</p>
+          <a class="download-qr-link" href="{{DOWNLOAD_PAGE_URL}}" aria-label="打开智为康乐应用下载页">
+            <picture><source srcset="/assets/app-download/download-qr.svg" type="image/svg+xml"><img src="/assets/app-download/download-qr.png" width="216" height="216" alt="扫描二维码，打开智为康乐应用下载页"></picture>
+          </a>
+          <p class="download-qr-caption">打开本页，选择 Android 下载</p>
+          <a class="download-text-link" href="/assets/app-download/download-qr.png" download="zhiwellcare-download-qr.png">保存二维码</a>
+        </aside>
+      </div>
+    </section>
+
+    <section class="download-packages" id="download-packages" aria-labelledby="download-platform-title">
+      <div class="container">
+        <div class="download-section-heading"><h2 class="h2" id="download-platform-title">选择你的设备</h2><p>安装包由智为康乐官网提供。</p></div>
+        <div class="download-platform-grid">
+          <article class="download-platform-card download-platform-card-primary" aria-labelledby="download-android-title">
+            <div class="download-platform-heading">
+              <span class="download-platform-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="3" width="16" height="26" rx="3"></rect><path d="M13 7h6M15 25h2M16 12v8m-3-3 3 3 3-3"></path></svg></span>
+              <div><h3 id="download-android-title">Android 手机 / 平板</h3><p>Android 7.0 及以上</p></div>
+            </div>
+            <p class="download-package-meta">v{{VERSION}} <span aria-hidden="true">·</span> {{ANDROID_SIZE}} <span aria-hidden="true">·</span> APK 安装包</p>
+            <a class="btn btn--primary download-primary-button" href="{{ANDROID_URL}}" download>下载 Android 版 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"></path></svg></a>
+            <p class="download-package-help">下载后按设备提示安装，并确认安装包来自本站。</p>
+          </article>
+          <article class="download-platform-card" aria-labelledby="download-windows-title">
+            <div class="download-platform-heading">
+              <span class="download-platform-icon" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="26" height="17" rx="2"></rect><path d="M12 27h8m-4-5v5M16 9v9m-3-3 3 3 3-3"></path></svg></span>
+              <div><h3 id="download-windows-title">Windows 电脑</h3><p>Windows 10 / 11 · 64 位</p></div>
+            </div>
+            <p class="download-package-meta">v{{VERSION}} <span aria-hidden="true">·</span> {{WINDOWS_SIZE}} <span aria-hidden="true">·</span> EXE 安装包</p>
+            <a class="btn btn--ghost download-primary-button" href="{{WINDOWS_URL}}" download>下载 Windows 版 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M4 17v4h16v-4"></path></svg></a>
+            <p class="download-package-help">系统可能提示发布者未知；安装前请核对下载来源为 zhiwellcare.com。</p>
+          </article>
+        </div>
+        <p class="download-ios-note"><strong>使用 iPhone 或 iPad？</strong>目前未提供 iOS 安装包，请使用 Android 或 Windows 设备体验。</p>
+      </div>
+    </section>
+
+    <section class="download-help-section" aria-labelledby="download-help-title">
+      <div class="container download-help-grid">
+        <div class="download-help-copy">
+          <h2 class="h3" id="download-help-title">下载前，了解这些</h2>
+          <ul class="download-tips">
+            <li><strong>微信内无法下载时</strong><span>请从右上角菜单选择“在浏览器打开”，再点击对应的下载按钮。</span></li>
+            <li><strong>保留这个地址</strong><span>下次访问本页即可获取当前版本，无需重新获取二维码。</span></li>
+          </ul>
+          <label class="download-url-label" for="download-page-url">应用下载页地址</label>
+          <div class="download-url-row"><input id="download-page-url" class="download-url" value="{{DOWNLOAD_PAGE_URL}}" readonly spellcheck="false" aria-label="应用下载页地址"><button class="download-copy" type="button" data-copy-target="download-page-url" hidden>复制地址</button></div>
+          <p class="download-copy-status" id="download-copy-status" role="status" aria-live="polite"></p>
+          <noscript><p class="download-package-help">你可以长按或选中上方地址复制；下载按钮不需要启用 JavaScript。</p></noscript>
+        </div>
+        <!-- 校验信息默认收起，供需要核对安装包的用户查看。 -->
+        <details class="download-checksums">
+          <summary>安装包校验与版本信息 <span aria-hidden="true">＋</span></summary>
+          <div class="download-checksums-inner">
+            <p>SHA-256 用于核对下载文件是否完整。</p>
+            <div class="download-hash-label"><strong>Android · SHA-256</strong><button class="download-copy download-copy-small" type="button" data-copy-target="download-android-sha256" hidden>复制</button></div>
+            <code class="download-hash" id="download-android-sha256">{{ANDROID_SHA256}}</code>
+            <div class="download-hash-label"><strong>Windows · SHA-256</strong><button class="download-copy download-copy-small" type="button" data-copy-target="download-windows-sha256" hidden>复制</button></div>
+            <code class="download-hash" id="download-windows-sha256">{{WINDOWS_SHA256}}</code>
+            <div class="download-verification-links"><a href="{{CHECKSUMS_URL}}">下载校验文件</a><a href="{{RELEASE_INFO_URL}}">查看版本信息</a><a href="{{SIGNATURE_URL}}">Windows 更新签名</a></div>
+          </div>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <!-- 页脚沿用官网信息与备案入口，不新增尚未提供内容的空链接。 -->
+  <footer class="site-footer">
+    <div class="container">
+      <div class="footer-main">
+        <div class="footer-brand">
+          <a class="brand" href="/index.html"><span class="brand__mark" aria-hidden="true"><img src="/assets/img/logo-round.jpg?v=91ef964ff1" alt="" width="44" height="44"></span><span class="brand__text"><span class="brand__en">ZhiWellCare</span><span class="brand__cn">智为康乐</span></span></a>
+          <p>专注康复养老器械的研发与制造，面向康复机构、养老院、渠道商与居家用户提供产品与上门居家康训服务。</p>
+        </div>
+        <div class="footer-col"><h4>网站导航</h4><ul><li><a href="/about.html">关于我们</a></li><li><a href="/products.html">产品中心</a></li><li><a href="/home-care.html">上门康训</a></li><li><a href="/solutions.html">解决方案</a></li><li><a href="/news.html">新闻资讯</a></li><li><a href="/support.html">资料中心</a></li><li><a href="/download.html" aria-current="page">应用下载</a></li></ul></div>
+        <div class="footer-col"><h4>产品中心</h4><ul><li><a href="/products.html">智能康训设备</a></li><li><a href="/products.html">适老康养辅具</a></li><li><a href="/products.html">自有品牌产品</a></li><li><a href="/support.html">资料下载</a></li></ul></div>
+        <div class="footer-col"><h4>合作与支持</h4><ul><li><a href="/contact.html">渠道加盟</a></li><li><a href="/contact.html">机构采购</a></li><li><a href="/home-care.html">上门康训 · 预约 / 合作</a></li><li><a href="/support.html">售后说明</a></li></ul></div>
+        <div class="footer-col"><h4>联系我们</h4><ul><li>地址：北京市海淀区西三旗建材城中路12号16幢平房106</li><li>邮箱：<a href="mailto:info@zhiwellcare.com">info@zhiwellcare.com</a></li><li><a href="/contact.html">联系与咨询</a></li></ul></div>
+      </div>
+      <div class="footer-comply">
+        <a class="icp-badge" href="https://beian.miit.gov.cn/" target="_blank" rel="noopener noreferrer" aria-label="网站ICP备案查询">京ICP备<strong>2023038913</strong>号</a>
+        <span>© <span id="year">2026</span> 智为康乐 版权所有</span>
+        <span class="disclaimer">本网站内容仅供产品展示，不构成医疗建议。</span>
+      </div>
+    </div>
+  </footer>
+</body>
+</html>

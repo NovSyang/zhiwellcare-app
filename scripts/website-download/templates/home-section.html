@@ -1,0 +1,21 @@
+<!-- 应用下载入口：二维码固定指向下载页，版本升级后仍可继续扫码。 -->
+<section class="download-home-section" id="app-download" aria-labelledby="download-home-title">
+  <div class="container">
+    <div class="download-home-card">
+      <div class="download-home-copy">
+        <span class="eyebrow">应用下载</span>
+        <h2 id="download-home-title">智为康乐，陪伴每一次训练</h2>
+        <p>Android 与 Windows 应用现已提供，手机扫码即可打开下载页。</p>
+        <p class="download-home-preview">当前为预览体验版，可体验本地训练；账号登录与云端服务暂未开放。</p>
+      </div>
+      <div class="download-home-actions">
+        <a class="btn btn--primary" href="/download.html">前往应用下载 <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"></path></svg></a>
+        <span class="download-home-version">v{{VERSION}} · {{CHANNEL_LABEL}}</span>
+      </div>
+      <figure class="download-home-qr">
+        <a href="{{DOWNLOAD_PAGE_URL}}" aria-label="打开智为康乐应用下载页"><picture><source srcset="/assets/app-download/download-qr.svg" type="image/svg+xml"><img src="/assets/app-download/download-qr.png" width="148" height="148" alt="扫描二维码，打开智为康乐应用下载页" loading="lazy"></picture></a>
+        <figcaption>手机扫一扫 · 获取应用</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
