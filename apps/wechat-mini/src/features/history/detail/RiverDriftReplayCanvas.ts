@@ -4,6 +4,7 @@ import {
   type ObstacleSpawnPayload, type SegmentSpawnPayload,
 } from '@/shared/river'
 import { RiverDriftCanvas } from '../../../platform/canvas/RiverDriftCanvas'
+import { projectRiverOverview } from '../../../platform/canvas/SceneOverviewProjection'
 import type { CanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
 import { drawSceneOverview, eventTimes, readPositiveConfig, SceneReplayData } from './SceneReplayData'
 
@@ -38,7 +39,7 @@ export class RiverDriftReplayCanvas {
       const obstacle = payload as ObstacleSpawnPayload
       return { ...obstacle, from: elapsedMs, offset: atSpawn(elapsedMs), hitAt: hits.get(obstacle.id) ?? Infinity }
     })
-    const toTrack = (time: number, x: number) => ({ x, y: time / Math.max(1, replay.durationMs) })
+    const toTrack = (time: number, x: number) => projectRiverOverview(time, x, replay.durationMs)
     this.track = this.timeline.poses.map(({ elapsedMs, x }) => toTrack(elapsedMs, x))
     this.hits = [...hits.values()].map((time) => toTrack(time, this.timeline.at(time).x))
   }

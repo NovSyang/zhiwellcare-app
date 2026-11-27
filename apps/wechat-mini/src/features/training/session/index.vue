@@ -16,8 +16,9 @@ import { createTrainingClock } from '../../../platform/TrainingClock'
 import { waitForCanvasSurface, type CanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
 import { readImmersiveLayout, setTrainingScreenOn } from '../../../platform/ImmersiveLayout'
 import { formatDuration } from '../../../utils/DateTimeFormatter'
-import { createTrainingRun } from './createTrainingRun'
+import { createTrainingRun, type TrainingCanvasOptions } from './createTrainingRun'
 import type { TrainingPauseReason } from './MiniTrainingRun'
+import type { RuntimeTrajectoryMode } from './RuntimeTrajectory'
 
 defineOptions({ name: 'TrainingSessionPage' })
 
@@ -38,6 +39,7 @@ const saveError = ref('')
 const finished = shallowRef<TrainingRecord | null>(null)
 const openingResult = ref(false)
 const resultError = ref('')
+const trajectoryMode = ref<RuntimeTrajectoryMode>('tail')
 const connected = computed(() => sensorSnapshot.value?.state === 'connected')
 const calibrating = computed(() => deviceState.value.calibrating)
 const pauseText: Record<TrainingPauseReason, string> = {
@@ -53,6 +55,7 @@ let training: ReturnType<typeof createTrainingRun> | null = null
 let surface: CanvasSurface | null = null
 let drawFrame: (() => void) | null = null
 let animation: number | null = null
+let paintRevision = 0
 let timer: ReturnType<typeof setInterval> | undefined
 let latestInput: GameInput | null = null
 let originalDeviceId: string | null = null
@@ -68,15 +71,8 @@ useLoad(({ game }) => { if (game) gameId.value = isMiniTrainingGameId(game) ? ga
 useReady(() => {
   if (!game.value) return
   mounted = true
-  unsubscribe = sensorService.onSnapshot(({ gameInput }) => {
-    latestInput = gameInput
-    if (!training) return
-    const sameDevice = originalDeviceId === connectionSnapshot.value.binding?.deviceId
-    training.run.receive(sameDevice ? gameInput : { ...gameInput, connected: false, calibrated: false, x: 0, y: 0 })
-    syncRun()
-  })
+  subscribeToPageInput()
   void mountCanvas()
-  Taro.onWindowResize?.(resize)
 })
 useDidShow(() => {
   pageVisible = true
@@ -88,13 +84,32 @@ useUnload(() => {
   canvasRevision += 1
   stopLoops()
   training?.run.abort()
-  unsubscribe?.()
-  Taro.offWindowResize?.(resize)
+  unsubscribeFromPageInput()
   Taro.disableAlertBeforeUnload?.()
 })
 // 先停止判定和绘制，再等待常亮关闭，最后允许更新。
 useMiniPageLock('横屏训练', () => setTrainingScreenOn(false))
 watch(foreground, applyVisibility, { flush: 'sync' })
+
+/** 保持唯一的页面姿态订阅，退后台时连同窗口事件一起解绑。 */
+function subscribeToPageInput() {
+  if (unsubscribe || !active || !mounted || disposed) return
+  unsubscribe = sensorService.onSnapshot(({ gameInput }) => {
+    latestInput = gameInput
+    if (!training) return
+    const sameDevice = originalDeviceId === connectionSnapshot.value.binding?.deviceId
+    training.run.receive(sameDevice ? gameInput : { ...gameInput, connected: false, calibrated: false, x: 0, y: 0 })
+    syncRun()
+  })
+  Taro.onWindowResize?.(resize)
+}
+
+function unsubscribeFromPageInput() {
+  if (!unsubscribe) return
+  unsubscribe()
+  unsubscribe = undefined
+  Taro.offWindowResize?.(resize)
+}
 
 /** 小程序进后台时立即暂停，停掉绘制和判定，并清掉旧中心。 */
 function applyVisibility() {
@@ -105,9 +120,11 @@ function applyVisibility() {
   if (!active) {
     canvasRevision += 1
     stopLoops()
+    unsubscribeFromPageInput()
     if (training && !finished.value) invalidateTrainingCalibration()
     void setTrainingScreenOn(false)
   } else {
+    subscribeToPageInput()
     if (training && !finished.value) void setTrainingScreenOn(true)
     if (mounted && !finished.value) resize()
     if (saved.value && !resultError.value) void openResult()
@@ -118,6 +135,14 @@ function applyVisibility() {
 function resize() {
   insets.value = readImmersiveLayout()
   if (active && !finished.value) void mountCanvas()
+}
+
+function canvasOptions(): TrainingCanvasOptions {
+  return {
+    trajectoryMode: () => trajectoryMode.value,
+    safeLeft: Number.parseFloat(insets.value['--safe-left']),
+    safeBottom: Number.parseFloat(insets.value['--safe-bottom']),
+  }
 }
 
 async function mountCanvas() {
@@ -134,7 +159,7 @@ async function mountCanvas() {
     await nextTick()
     const current = await waitForCanvasSurface('#training-canvas', isCurrent, 'landscape')
     if (!current) return
-    const draw = training?.mount(current)
+    const draw = training?.mount(current, canvasOptions())
     draw?.()
     surface = current
     drawFrame = draw ?? null
@@ -174,28 +199,41 @@ function syncRun() {
   if (active && (state.value === 'playing' || state.value === 'countdown')) {
     // Canvas 刷新与 50Hz 业务定时器各自运行，低帧率不改变判定规则。
     timer ??= setInterval(() => { run.tick(); syncRun() }, 20)
-    if (canvasReady.value && animation === null && surface && drawFrame) {
-      const { node } = surface
-      const draw = drawFrame
-      const paint = () => {
-        try {
-          draw()
-          animation = node.requestAnimationFrame(paint)
-        } catch (failure) {
-          // 画布故障时暂停本局，重新挂载后再由用户继续。
-          animation = null
-          canvasReady.value = false
-          run.pause()
-          error.value = errorText(failure, '训练画布绘制失败，请重试。')
-          syncRun()
-        }
-      }
-      paint()
-    }
-  } else {
+    schedulePainting()
+  } else if (previousState !== state.value) {
     stopLoops()
-    if (active && canvasReady.value && previousState !== state.value && !finished.value) drawFrame?.()
+    schedulePainting()
   }
+}
+
+/** 即使由设备回调触发状态切换，实际绘制也只在 Canvas 帧内执行。 */
+function schedulePainting() {
+  if (!active || !canvasReady.value || animation !== null || !surface || !drawFrame || finished.value) return
+  const { node } = surface
+  const draw = drawFrame
+  const revision = paintRevision
+  animation = node.requestAnimationFrame(() => {
+    // 已取消的旧帧即使迟到，也不能清除新画布的帧句柄。
+    if (revision !== paintRevision) return
+    animation = null
+    if (!active || disposed || finished.value || drawFrame !== draw) return
+    try {
+      draw()
+      if (state.value === 'playing' || state.value === 'countdown') schedulePainting()
+    } catch (failure) {
+      // 主体画布故障时仍保留原有暂停与重试入口。
+      canvasReady.value = false
+      training?.run.pause()
+      error.value = errorText(failure, '训练画布绘制失败，请重试。')
+      syncRun()
+    }
+  })
+}
+
+function toggleTrajectory() {
+  trajectoryMode.value = trajectoryMode.value === 'tail' ? 'full' : 'tail'
+  // 暂停页可切换显示，但只补画一帧，业务时钟和录制保持冻结。
+  schedulePainting()
 }
 
 function stopLoops() {
@@ -205,6 +243,7 @@ function stopLoops() {
 }
 
 function stopPainting() {
+  paintRevision += 1
   if (animation !== null) surface?.node.cancelAnimationFrame(animation)
   animation = null
 }
@@ -223,7 +262,7 @@ async function begin() {
       throw new Error('当前设备未匹配此训练，请检查连接。')
     }
     const session = createTrainingRun(id, { clock, profile: motionProfileService.getCurrent(), device: offer.device })
-    const draw = session.mount(surface)
+    const draw = session.mount(surface, canvasOptions())
     session.run.receive(latestInput)
     session.run.start()
     originalDeviceId = binding.deviceId
@@ -331,6 +370,10 @@ function errorText(failure: unknown, fallback: string) { return failure instance
         <text v-for="metric in metrics" :key="metric.label" class="immersive-chip">{{ metric.label }} {{ metric.value }}</text>
       </view>
       <view class="immersive-row">
+        <button v-if="state === 'playing'" size="mini" class="immersive-button immersive-trajectory-toggle"
+          :class="{ 'immersive-primary': trajectoryMode === 'full' }"
+          :aria-label="trajectoryMode === 'tail' ? '动态尾迹，点击切换完整轨迹' : '完整轨迹，点击切换动态尾迹'"
+          @tap="toggleTrajectory">{{ trajectoryMode === 'tail' ? '动态尾迹' : '完整轨迹' }}</button>
         <button size="mini" class="immersive-button" @tap="pause">暂停</button>
         <button size="mini" class="immersive-button" @tap="exitTraining">结束</button>
       </view>
@@ -362,6 +405,9 @@ function errorText(failure: unknown, fallback: string) { return failure instance
             <template v-if="game">
               <button v-if="state === 'idle'" size="mini" class="immersive-button immersive-primary" :disabled="busy || !canvasReady || !readyForTraining || deviceBusy || interactionsBlocked" @tap="begin">开始训练</button>
               <button v-else-if="state === 'paused'" size="mini" class="immersive-button immersive-primary" :disabled="!canvasReady || !canResume || deviceBusy || interactionsBlocked" @tap="resume">继续训练</button>
+              <button v-if="state === 'paused'" size="mini" class="immersive-button immersive-trajectory-toggle"
+                :class="{ 'immersive-primary': trajectoryMode === 'full' }" :disabled="!canvasReady"
+                @tap="toggleTrajectory">{{ trajectoryMode === 'tail' ? '动态尾迹' : '完整轨迹' }}</button>
               <button v-if="!canvasReady && error" size="mini" class="immersive-button" @tap="mountCanvas">重试画布</button>
               <button v-if="!connected && connectionSnapshot.binding" size="mini" class="immersive-button" :disabled="busy || deviceBusy || interactionsBlocked" @tap="reconnect">重连设备</button>
               <button v-else-if="connected && !readyForTraining" size="mini" class="immersive-button" :disabled="deviceBusy || busy || interactionsBlocked" @tap="calibrate">
@@ -376,3 +422,8 @@ function errorText(failure: unknown, fallback: string) { return failure instance
     </view>
   </view>
 </template>
+
+<style>
+/* 轨迹切换使用独立触区，沿用暂停和结束所在的安全区操作栏。 */
+.immersive-shell button.immersive-trajectory-toggle { min-height: 44PX; white-space: nowrap; }
+</style>

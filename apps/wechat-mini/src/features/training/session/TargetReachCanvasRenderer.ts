@@ -1,6 +1,7 @@
 import type { TargetReachFrame } from '@/shared/target-controller'
 import type { TargetReachGameConfig } from '@/shared/target-config'
 import { createTargetReachViewport, getPlayerRadiusPx, normalizedToScreen } from '@/shared/target-viewport'
+import type { CanvasPoint } from '../../../platform/canvas/SceneCanvas'
 import { prepareCanvas, type CanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
 
 /** 微信实时训练画布只消费共享控制器的快照。 */
@@ -13,11 +14,13 @@ export class TargetReachCanvasRenderer {
     this.viewport = createTargetReachViewport(surface.width, surface.height, { top: 46, right: 16, bottom: 16, left: 16 })
   }
 
-  draw(frame: TargetReachFrame): void {
+  draw(frame: TargetReachFrame, paintTrajectory?: (ctx: CanvasRenderingContext2D, project: (point: CanvasPoint) => CanvasPoint) => void): void {
     const { context: ctx, viewport } = this
     const { state, countdownRemainingMs } = frame.session
     ctx.fillStyle = '#08111f'
     ctx.fillRect(0, 0, viewport.width, viewport.height)
+    // 轨迹放在下层，目标、命中反馈和圆点仍在最上方。
+    paintTrajectory?.(ctx, (point) => normalizedToScreen(point, viewport))
 
     ctx.beginPath()
     ctx.arc(viewport.centerX, viewport.centerY, 6, 0, Math.PI * 2)

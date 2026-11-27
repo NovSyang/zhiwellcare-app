@@ -13,6 +13,8 @@ import { round4 } from '../../core/replay/ReplayMath'
 interface RiverDriftControllerOptions {
   makeSeed?: () => number
   recordScene?: boolean
+  /** 在原有位姿采样点发布船位与河流距离，供实时概览使用。 */
+  onScenePose?: (elapsedMs: number, boatX: number, worldDistance: number) => void
   onStep?: (world: RiverDriftWorld, boat: RiverDriftBoatState, feedback: RiverDriftWorldFeedback, dt: number, elapsedMs: number) => void
 }
 
@@ -185,10 +187,12 @@ export class RiverDriftController {
     if (!this.options.recordScene || !this.events.onReplayEvent) return
     const { x, y } = this.boat
     const time = Math.round(elapsedMs)
-    const values = [time, x, y, this.world.worldDistance].map(round4)
+    const distance = this.world.worldDistance
+    const values = [time, x, y, distance].map(round4)
     const last = this.scenePoses[this.scenePoses.length - 1]
     if (last?.[0] === time) this.scenePoses[this.scenePoses.length - 1] = values
     else this.scenePoses.push(values)
+    this.options.onScenePose?.(time, x, distance)
   }
 
   private finishScene(elapsedMs: number): void {

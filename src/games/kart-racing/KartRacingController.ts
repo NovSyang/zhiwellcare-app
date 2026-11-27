@@ -14,6 +14,8 @@ import { round4 } from '../../core/replay/ReplayMath'
 interface KartRacingControllerOptions {
   makeSeed?: () => number
   recordScene?: boolean
+  /** 沿用历史位姿采样时机，向实时概览发布真实车位和赛道距离。 */
+  onScenePose?: (elapsedMs: number, lateral: number, distance: number) => void
   onStep?: (world: KartRacingWorld, feedback: KartWorldFeedback, elapsedMs: number) => void
   onRenderTick?: (now: number, particleDelta: number) => void
 }
@@ -234,6 +236,7 @@ export class KartRacingController {
     const last = this.scenePoses[this.scenePoses.length - 1]
     if (last?.[0] === time) this.scenePoses[this.scenePoses.length - 1] = values
     else this.scenePoses.push(values)
+    this.options.onScenePose?.(time, lateral, distance)
   }
 
   private finishScene(elapsedMs: number): void {

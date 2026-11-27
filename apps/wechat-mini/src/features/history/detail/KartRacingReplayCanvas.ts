@@ -1,9 +1,10 @@
-import { clamp, type TrainingReplay } from '@/shared/core'
+import type { TrainingReplay } from '@/shared/core'
 import {
   createDefaultKartTrack, defaultKartRacingGameConfig, isKartRacingReplayEvent,
   type KartCompletePayload, type KartEntitySpawnPayload,
 } from '@/shared/kart'
 import { KartRacingCanvas } from '../../../platform/canvas/KartRacingCanvas'
+import { projectKartOverview } from '../../../platform/canvas/SceneOverviewProjection'
 import type { CanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
 import { drawSceneOverview, eventTimes, readPositiveConfig, SceneReplayData } from './SceneReplayData'
 
@@ -39,9 +40,7 @@ export class KartRacingReplayCanvas {
     this.obstacles = spawn('obstacle-spawn').map((item) => ({ ...item, obstacleType: item.kind, hitAt: hits.get(item.id) ?? Infinity }))
     this.items = spawn('item-spawn').map((item) => ({ ...item, itemType: item.kind, until: items.get(item.id) ?? Infinity }))
     this.finish = events.find(({ type }) => type === 'kart-complete')
-    const point = ({ x, distance }: { x: number; distance: number }) => ({
-      x: clamp((x + 1) / 2, 0, 1), y: clamp(distance / trackLength, 0, 1),
-    })
+    const point = ({ x, distance }: { x: number; distance: number }) => projectKartOverview(x, distance, trackLength)
     this.path = this.timeline.poses.map(point)
     this.hits = [...hits.values()].map((time) => point(this.timeline.at(time)))
   }

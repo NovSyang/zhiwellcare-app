@@ -31,7 +31,7 @@ export class KartRacingCanvas {
     this.sky.addColorStop(1, '#d5f3f6')
   }
 
-  draw(scene: KartScene): void {
+  draw(scene: KartScene, paintTrajectory?: (ctx: CanvasRenderingContext2D) => void): void {
     const { ctx, viewport } = this
     const { width, height, horizonY, roadBottomY, scale } = viewport
     ctx.fillStyle = '#5a984f'
@@ -80,6 +80,8 @@ export class KartRacingCanvas {
         }
       }
     }
+    // 赛道提示之后绘制概览，车辆及各类道具仍位于上层。
+    paintTrajectory?.(ctx)
     // 先绘制远处物体，近处物体自然盖在前面。
     const objects = [
       ...scene.coins.filter(({ active }) => active).map((item) => ({ ...item, kind: 'coin', hit: false })),

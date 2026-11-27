@@ -18,10 +18,20 @@ import type { MiniTrainingGameId } from '../../../app/TrainingGames'
 import { RiverDriftCanvas } from '../../../platform/canvas/RiverDriftCanvas'
 import { KartRacingCanvas } from '../../../platform/canvas/KartRacingCanvas'
 import { TrajectoryFollowCanvas } from '../../../platform/canvas/TrajectoryFollowCanvas'
+import type { CanvasPoint } from '../../../platform/canvas/SceneCanvas'
+import { projectKartOverview, projectRiverOverview } from '../../../platform/canvas/SceneOverviewProjection'
+import { drawRuntimeSceneOverview, protectTrajectoryLayer, strokeRuntimeTrajectory } from '../../../platform/canvas/RuntimeTrajectoryCanvas'
 import type { CanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
 import { MiniTrainingRun, type TrainingRunOptions } from './MiniTrainingRun'
+import type { RuntimeTrajectoryMode, RuntimeTrajectorySnapshot } from './RuntimeTrajectory'
 import { TargetReachCanvasRenderer } from './TargetReachCanvasRenderer'
 import { TargetReachRun } from './TargetReachRun'
+
+export interface TrainingCanvasOptions {
+  trajectoryMode: () => RuntimeTrajectoryMode
+  safeLeft: number
+  safeBottom: number
+}
 
 /** 将当前游戏的画布和指标接到同一个训练页，计分仍由共享控制器完成。 */
 export function createTrainingRun(gameId: MiniTrainingGameId, options: TrainingRunOptions) {
@@ -39,9 +49,16 @@ export function createTrainingRun(gameId: MiniTrainingGameId, options: TrainingR
           { label: '完成', value: `${status.completedTargets} / ${config.targetCount}` },
         ]
       },
-      mount: (surface: CanvasSurface) => {
+      mount: (surface: CanvasSurface, options: TrainingCanvasOptions) => {
         const canvas = new TargetReachCanvasRenderer(surface, config)
-        return () => canvas.draw(run.getFrame())
+        const paint = protectTrajectoryLayer((ctx, project: (point: CanvasPoint) => CanvasPoint, elapsedMs: number) => {
+          const snapshot = run.getTrajectory(options.trajectoryMode(), elapsedMs)
+          strokeRuntimeTrajectory(ctx, snapshot, (x, y) => project({ x, y }), '#72cbe9', 2)
+        })
+        return () => {
+          const frame = run.getFrame()
+          canvas.draw(frame, (ctx, project) => paint(ctx, project, frame.session.playingElapsedMs))
+        }
       },
       present: (): GameResultPresentation | null => {
         const record = run.getRecord()
@@ -64,13 +81,22 @@ export function createTrainingRun(gameId: MiniTrainingGameId, options: TrainingR
         { label: '范围内', value: `${(frame.inToleranceRatio * 100).toFixed(0)}%` },
       ]
     },
-    mount: (surface: CanvasSurface) => {
+    mount: (surface: CanvasSurface, options: TrainingCanvasOptions) => {
       const canvas = new TrajectoryFollowCanvas(surface)
+      const paint = protectTrajectoryLayer((ctx, project: (point: CanvasPoint) => [number, number], elapsedMs: number) => {
+        // 动态模式沿用 8 字训练原有窗口及绿色尾迹。
+        const snapshot = run.getTrajectory(options.trajectoryMode(), elapsedMs, config.trailWindowMs)
+        strokeRuntimeTrajectory(ctx, snapshot, (x, y) => {
+          const [canvasX, canvasY] = project({ x, y })
+          return { x: canvasX, y: canvasY }
+        }, '#68d391', 3)
+      })
       return () => {
         const { session, reference, guide, trail, input } = run.getFrame()
         const label = session.state === 'countdown' ? String(Math.max(1, Math.ceil(session.countdownRemainingMs / 1000)))
           : session.state === 'paused' ? '训练已暂停' : undefined
-        canvas.draw({ reference, guide, trail, player: input, tolerance: config.toleranceRadius, label })
+        canvas.draw({ reference, guide, trail, player: input, tolerance: config.toleranceRadius, label },
+          (ctx, project) => paint(ctx, project, session.playingElapsedMs))
       }
     },
     present: (): GameResultPresentation | null => {
@@ -85,7 +111,10 @@ function createRiverRun(options: TrainingRunOptions) {
   const config = { ...defaultRiverDriftGameConfig }
   const game = { id: RIVER_DRIFT_GAME_ID, name: RIVER_DRIFT_GAME_NAME, config }
   const run = new MiniTrainingRun<RiverDriftTrainingResult, RiverDriftGameConfig, ReturnType<RiverDriftController['getFrame']>>(
-    options, game, (events) => new RiverDriftController(options.clock, config, events, { recordScene: true }),
+    options, game, (events, capture) => new RiverDriftController(options.clock, config, events, {
+      recordScene: true,
+      onScenePose: (elapsedMs, boatX, distance) => capture(elapsedMs, projectRiverOverview(elapsedMs, boatX, config.sessionDurationMs), distance),
+    }), 'scene',
   )
   return {
     run,
@@ -93,11 +122,13 @@ function createRiverRun(options: TrainingRunOptions) {
       const { collectedCoins, collisionCount } = run.getFrame()
       return [{ label: '金币', value: String(collectedCoins) }, { label: '碰撞', value: String(collisionCount) }]
     },
-    mount: (surface: CanvasSurface) => {
+    mount: (surface: CanvasSurface, options: TrainingCanvasOptions) => {
       const canvas = new RiverDriftCanvas(surface, config)
+      const paint = createScenePainter(surface, options, '漂流路线', (mode, elapsedMs) => run.getTrajectory(mode, elapsedMs))
       return () => {
         const frame = run.getFrame()
-        canvas.draw({ ...frame, label: sceneLabel(frame.session) })
+        const { session } = frame
+        canvas.draw({ ...frame, label: sceneLabel(session) }, (ctx) => paint(ctx, session.playingElapsedMs))
       }
     },
     present: (): GameResultPresentation | null => {
@@ -112,7 +143,10 @@ function createKartRun(options: TrainingRunOptions) {
   const config = { ...defaultKartRacingGameConfig, finishCelebrationMs: 0 }
   const game = { id: KART_RACING_GAME_ID, name: KART_RACING_GAME_NAME, config }
   const run = new MiniTrainingRun<KartRacingTrainingResult, KartRacingGameConfig, ReturnType<KartRacingController['getFrame']>>(
-    options, game, (events) => new KartRacingController(options.clock, config, events, { recordScene: true }),
+    options, game, (events, capture) => new KartRacingController(options.clock, config, events, {
+      recordScene: true,
+      onScenePose: (elapsedMs, lateral, distance) => capture(elapsedMs, projectKartOverview(lateral, distance, config.trackLength), distance),
+    }), 'scene',
   )
   return {
     run,
@@ -124,11 +158,13 @@ function createKartRun(options: TrainingRunOptions) {
         { label: '碰撞', value: String(collisionCount) },
       ]
     },
-    mount: (surface: CanvasSurface) => {
+    mount: (surface: CanvasSurface, options: TrainingCanvasOptions) => {
       const canvas = new KartRacingCanvas(surface, config)
+      const paint = createScenePainter(surface, options, '赛道路程', (mode, elapsedMs) => run.getTrajectory(mode, elapsedMs))
       return () => {
         const frame = run.getFrame()
-        canvas.draw({ ...frame, label: sceneLabel(frame.session) })
+        const { session } = frame
+        canvas.draw({ ...frame, label: sceneLabel(session) }, (ctx) => paint(ctx, session.playingElapsedMs))
       }
     },
     present: (): GameResultPresentation | null => {
@@ -136,6 +172,21 @@ function createKartRun(options: TrainingRunOptions) {
       return record && presentKartRacingResult(record.result, record.gameConfig)
     },
   }
+}
+
+/** 概览沿安全区边角缩放，切屏时只重建绘制状态。 */
+function createScenePainter(
+  surface: CanvasSurface, options: TrainingCanvasOptions, title: string,
+  read: (mode: RuntimeTrajectoryMode, elapsedMs: number) => RuntimeTrajectorySnapshot,
+) {
+  const width = Math.min(96, surface.width * 0.14)
+  const height = Math.min(92, surface.height * 0.26)
+  const bounds = { left: options.safeLeft, top: surface.height - options.safeBottom - height, width, height }
+  return protectTrajectoryLayer((ctx, elapsedMs: number) => {
+    if (width < 48 || height < 46 || bounds.top < 0) return
+    const snapshot = read(options.trajectoryMode(), elapsedMs)
+    drawRuntimeSceneOverview(ctx, snapshot, bounds, title)
+  })
 }
 
 /** 倒计时和暂停文案由公共训练状态提供。 */

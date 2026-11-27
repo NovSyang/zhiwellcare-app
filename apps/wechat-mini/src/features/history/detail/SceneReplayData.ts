@@ -1,6 +1,7 @@
 import { downsampleForDisplay, type ReplayEvent, type TrainingReplay } from '@/shared/core'
 import type { CanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
 import { drawSceneLabel, fillCircle } from '../../../platform/canvas/SceneCanvas'
+import type { SceneOverviewPoint } from '../../../platform/canvas/SceneOverviewProjection'
 
 interface Pose { elapsedMs: number; x: number; y: number; distance: number; flags: number }
 
@@ -66,8 +67,8 @@ export function readPositiveConfig(config: unknown, key: string, fallback: numbe
 
 /** 横轴为转向位置，纵轴为有效时间或赛道进度，红点标记碰撞。 */
 export function drawSceneOverview(
-  surface: CanvasSurface, track: readonly { x: number; y: number }[],
-  hits: readonly { x: number; y: number }[], caption: string,
+  surface: CanvasSurface, track: readonly SceneOverviewPoint[],
+  hits: readonly SceneOverviewPoint[], caption: string,
 ): void {
   const ctx = surface.node.getContext('2d') as CanvasRenderingContext2D
   const { width, height } = surface
@@ -82,13 +83,13 @@ export function drawSceneOverview(
   ctx.strokeRect(margin, top, width - 2 * margin, Math.max(1, height - top - margin))
   ctx.beginPath()
   downsampleForDisplay(track, 700).forEach((point, index) => {
-    if (index === 0) ctx.moveTo(x(point.x), y(point.y))
-    else ctx.lineTo(x(point.x), y(point.y))
+    if (index === 0) ctx.moveTo(x(point.lateralRatio), y(point.progressRatio))
+    else ctx.lineTo(x(point.lateralRatio), y(point.progressRatio))
   })
   ctx.strokeStyle = '#22799d'
   ctx.lineWidth = 2.5
   ctx.stroke()
-  for (const hit of hits) fillCircle(ctx, x(hit.x), y(hit.y), 3, '#d5504d')
+  for (const hit of hits) fillCircle(ctx, x(hit.lateralRatio), y(hit.progressRatio), 3, '#d5504d')
 }
 
 function finite(value: unknown): value is number {

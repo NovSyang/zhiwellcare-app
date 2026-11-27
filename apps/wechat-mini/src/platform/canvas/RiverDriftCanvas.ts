@@ -28,7 +28,7 @@ export class RiverDriftCanvas {
     this.water.addColorStop(1, '#52baca')
   }
 
-  draw(scene: RiverScene): void {
+  draw(scene: RiverScene, paintTrajectory?: (ctx: CanvasRenderingContext2D) => void): void {
     const { ctx, viewport: { width, height, scale } } = this
     ctx.fillStyle = '#337758'
     ctx.fillRect(0, 0, width, height)
@@ -70,6 +70,8 @@ export class RiverDriftCanvas {
         fillCircle(ctx, x - r * 0.23, y * height - r * 0.2, r * 0.78, '#6bad69')
       }
     }
+    // 概览位于场景背景层，小船、金币及障碍保持可见。
+    paintTrajectory?.(ctx)
     for (const coin of scene.coins) {
       if (!coin.active || coin.y < -0.1 || coin.y > 1.1) continue
       const r = scale * coin.radius * riverDriftPerspectiveScale(coin.y)

@@ -26,7 +26,7 @@ export class TrajectoryFollowCanvas {
     this.scale = Math.max(1, Math.min(surface.width, surface.height) / 2 - 28)
   }
 
-  draw(scene: TrajectoryScene): void {
+  draw(scene: TrajectoryScene, paintTrajectory?: (ctx: CanvasRenderingContext2D, project: (point: Point) => [number, number]) => void): void {
     const { context: ctx, surface } = this
     ctx.fillStyle = '#08111f'
     ctx.fillRect(0, 0, surface.width, surface.height)
@@ -36,7 +36,9 @@ export class TrajectoryFollowCanvas {
       this.displayReference = downsampleForDisplay(scene.reference, 241)
     }
     this.line(this.displayReference, '#55799e', 2)
-    this.line(scene.trail, '#68d391', 3)
+    // 历史回放使用原有轨迹，运行时沿用坐标映射并支持分段。
+    if (paintTrajectory) paintTrajectory(ctx, (point) => this.toCanvas(point))
+    else this.line(scene.trail, '#68d391', 3)
     if (scene.guide) {
       if (scene.tolerance) this.dot(scene.guide, scene.tolerance * this.scale, '#4da3ff', true)
       this.dot(scene.guide, 4, '#8fd8ff', false)

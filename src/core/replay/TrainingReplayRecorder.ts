@@ -28,6 +28,12 @@ export class TrainingReplayRecorder {
     this.lastSampleElapsedMs = elapsedMs
   }
 
+  /** 实时画面只读新增的最后一点，不复制历史数组或改变录制节流。 */
+  readLatestInputSample(afterElapsedMs: number) {
+    const last = this.samples[this.samples.length - 1]
+    return last && last.elapsedMs > afterElapsedMs ? { ...last } : undefined
+  }
+
   recordEvent(event: ReplayEvent): void {
     const snapshot = copyReplayEvent(event)
     if (snapshot) this.events.push(snapshot)
