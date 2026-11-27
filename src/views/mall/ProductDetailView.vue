@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { findGoodsById, readMallCart, writeMallCart } from '../../data/mall'
+import { findGoodsById } from '../../data/mall'
+import { readMallCart, writeMallCart } from '../../platform/storage/AppMallCart'
 
 const route = useRoute()
 const router = useRouter()

@@ -102,11 +102,7 @@ export class RiverDriftWorld {
   }
 
   getRiverCenterAt(y: number): number {
-    const sorted = [...this.segments].sort((first, second) => first.y - second.y)
-    const segment = sorted.find((item) => y >= item.y && y <= item.y + item.height)
-      ?? (y < sorted[0].y ? sorted[0] : sorted.at(-1)!)
-    const ratio = Math.max(0, Math.min(1, (y - segment.y) / Math.max(0.001, segment.height)))
-    return segment.startCenterX + (segment.endCenterX - segment.startCenterX) * ratio
+    return riverDriftCenterAt(this.segments, y)
   }
 
   getBoatHorizontalBounds(y: number): { minX: number; maxX: number } {
@@ -263,6 +259,22 @@ export class RiverDriftWorld {
 }
 
 /** 金币轨迹先表达训练意图，再由世界对象池承载具体金币。 */
+/** 河岸绘制、训练判定和回放都使用同一条分段中心线。 */
+export function riverDriftCenterAt(segments: readonly RiverDriftSegment[], y: number): number {
+  if (segments.length === 0) return 0.5
+  let first = segments[0]
+  let last = first
+  let current: RiverDriftSegment | undefined
+  for (const segment of segments) {
+    if (segment.y < first.y) first = segment
+    if (segment.y > last.y) last = segment
+    if (y >= segment.y && y <= segment.y + segment.height && (!current || segment.y < current.y)) current = segment
+  }
+  const segment = current ?? (y < first.y ? first : last)
+  const ratio = Math.max(0, Math.min(1, (y - segment.y) / Math.max(0.001, segment.height)))
+  return segment.startCenterX + (segment.endCenterX - segment.startCenterX) * ratio
+}
+
 export function buildRiverDriftCoinPattern(
   type: RiverDriftCoinPatternType,
   centerX: number,

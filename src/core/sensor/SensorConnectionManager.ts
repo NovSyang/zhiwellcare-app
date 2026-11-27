@@ -34,6 +34,7 @@ export interface SensorConnectionPort {
 }
 
 type WaitFunction = (milliseconds: number) => Promise<void>
+type MatchDevice = (binding: DeviceBinding, devices: SensorDevice[]) => SensorDevice | null
 
 /**
  * 协调设备绑定与异常断线恢复；Transport 仍只负责原生 IPC。
@@ -56,6 +57,8 @@ export class SensorConnectionManager {
     private readonly sensor: SensorConnectionPort,
     private readonly repository: IDeviceBindingRepository,
     private readonly wait: WaitFunction = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+    // 微信可选用更严格的绑定策略，避免不同手机的广播名冒充唯一标识。
+    private readonly matchDevice: MatchDevice = matchBoundDevice,
   ) {}
 
   async initialize(): Promise<void> {
@@ -91,7 +94,13 @@ export class SensorConnectionManager {
   /** 首次选择设备时保存绑定；页面无需直接调用底层传感器连接。 */
   async connect(device: SensorDevice): Promise<void> {
     const workflowId = this.beginWorkflow('switch-device')
-    await this.connectAndSave(device, workflowId)
+    try {
+      await this.connectAndSave(device, workflowId)
+    } catch (error) {
+      // 连接失败后结束忙碌状态，允许用户再次选择设备。
+      if (this.isWorkflowCurrent(workflowId)) this.finishWaitingUser('连接失败，请重新选择设备。')
+      throw error
+    }
   }
 
   async disconnectManually(): Promise<void> {
@@ -168,6 +177,8 @@ export class SensorConnectionManager {
     try {
       await this.connectAndSave(device, workflowId)
     } catch (error) {
+      // 后台或主动断开已取消本次切换时，旧任务不得发起重连。
+      if (!this.isWorkflowCurrent(workflowId)) throw error
       this.binding = oldBinding
       if (oldBinding) {
         await this.repository.save(oldBinding)
@@ -236,7 +247,7 @@ export class SensorConnectionManager {
         const devices = await this.sensor.scan()
         if (!this.isWorkflowCurrent(workflowId)) return
         const binding: DeviceBinding | null = this.binding
-        const device: SensorDevice | null = binding ? matchBoundDevice(binding, devices) : null
+        const device: SensorDevice | null = binding ? this.matchDevice(binding, devices) : null
         if (!device) continue
         await this.connectAndSave(device, workflowId)
         return

@@ -1,6 +1,5 @@
 import type { ICatalogSource } from './ICatalogSource'
 import { MockCatalogSource } from './MockCatalogSource'
-import { HttpCatalogSource } from './HttpCatalogSource'
 import type {
   CatalogSnapshot,
   DeviceGameProfile,
@@ -10,16 +9,6 @@ import type {
 import { missingTags, tagsSatisfy } from './tagMatching'
 import type { MatchTag } from './CapabilityTags'
 
-/** 运行时目录源工厂：VITE_CATALOG_MODE=http 时连接 Golang 后端，失败自动回退本地。 */
-export function createCatalogSource(): ICatalogSource {
-  const mode = import.meta.env.VITE_CATALOG_MODE ?? 'mock'
-  const base = import.meta.env.VITE_API_BASE ?? ''
-  if (mode === 'http' && base) {
-    return new HttpCatalogSource(base.replace(/\/$/, ''))
-  }
-  return new MockCatalogSource()
-}
-
 /**
  * 目录服务：页面唯一的目录访问入口。
  * 缓存快照，提供“全部游戏 / 按设备型号过滤 / 缺失标签引导”的派生查询。
@@ -27,7 +16,8 @@ export function createCatalogSource(): ICatalogSource {
 export class CatalogService {
   private snapshotPromise: Promise<CatalogSnapshot> | null = null
 
-  constructor(private readonly source: ICatalogSource = createCatalogSource()) {}
+  // 平台入口选择 HTTP 实现，目录规则和离线兜底由两端共享。
+  constructor(private readonly source: ICatalogSource = new MockCatalogSource()) {}
 
   async loadSnapshot(): Promise<CatalogSnapshot> {
     this.snapshotPromise ??= this.fetchSnapshotWithFallback()
@@ -41,6 +31,16 @@ export class CatalogService {
   async listAllGames(): Promise<GameCatalogEntry[]> {
     const snapshot = await this.loadSnapshot()
     return snapshot.games.filter((game) => game.status === 'on')
+  }
+
+  /** 接入服务端型号匹配，网络不可用时使用共享标签规则。 */
+  async listModelGames(model: DeviceModelInfo): Promise<GameCatalogEntry[]> {
+    try {
+      return (await this.source.listModelGames(model.modelId))
+        .filter((game) => game.status === 'on' && tagsSatisfy(model.capabilityTags, game.requiredTags))
+    } catch {
+      return (await this.getDeviceGameProfile(model))?.games ?? []
+    }
   }
 
   /** 未连接设备时的大厅视图：全部上架游戏 + 推荐适配设备。 */

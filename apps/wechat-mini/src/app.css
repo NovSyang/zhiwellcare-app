@@ -1,0 +1,181 @@
+/* 对齐原 APP 的品牌色、卡片和沉浸式画布色。 */
+page {
+  --c-primary: #0436a7;
+  --c-primary-dark: #032a86;
+  --c-primary-soft: #e6edfd;
+  --c-ink: #1a2233;
+  --c-ink-2: #55637b;
+  --c-line: #e4eaf2;
+  --c-bg: #fff;
+  --c-bg-2: #f6f9fd;
+  --c-bg-3: #eef4fb;
+  --c-danger: #cc3340;
+  --c-danger-soft: #fdecee;
+  --canvas-bg: #0a1733;
+  --canvas-border: #1d3a66;
+  --grad-hero: linear-gradient(150deg, #0436a7 0%, #0d74c4 34%, #10b3cd 66%, #0dd5c1 100%);
+  --grad-button: linear-gradient(135deg, #0436a7, #0c679c);
+  --shadow-card: 0 4px 20px rgba(4, 54, 167, 0.07);
+  background: var(--c-bg-2);
+  color: var(--c-ink);
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.mini-page {
+  box-sizing: border-box;
+  min-height: 100vh;
+  padding: 28px 32px 56px;
+  background:
+    radial-gradient(circle at 88% 0, rgba(13, 213, 193, 0.1), transparent 34%),
+    radial-gradient(circle at 12% 0, rgba(4, 54, 167, 0.08), transparent 30%),
+    var(--c-bg-2);
+}
+
+.mini-heading,
+.mini-hero {
+  display: block;
+  font-size: 46px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 28px;
+}
+
+/* 五个主入口沿用 APP 的蓝青渐变页头。 */
+.mini-hero {
+  margin: -28px -32px 28px;
+  padding: 43px 32px 38px;
+  background: var(--grad-hero);
+  color: #fff;
+}
+
+.mini-card {
+  background: var(--c-bg);
+  border: 1px solid var(--c-line);
+  border-radius: 28px;
+  box-shadow: var(--shadow-card);
+  margin-bottom: 24px;
+  padding: 28px;
+}
+
+.mini-card-title {
+  display: block;
+  font-size: 33px;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.mini-description,
+.mini-error {
+  display: block;
+  font-size: 28px;
+  line-height: 1.55;
+  margin-top: 10px;
+}
+
+.mini-description { color: var(--c-ink-2); }
+.mini-error { color: var(--c-danger); }
+
+.mini-page button {
+  box-sizing: border-box;
+  background: var(--c-bg-3);
+  border: 1px solid var(--c-line);
+  border-radius: 18px;
+  color: var(--c-primary);
+  font-size: 28px;
+  line-height: 1.4;
+  margin-top: 18px;
+  min-height: 86px;
+  padding: 20px 18px;
+}
+
+/* 微信 Button 自带细边框，统一使用本页定义的实体边框。 */
+.mini-page button::after { border: 0; }
+
+.mini-page .mini-primary {
+  background: var(--grad-button);
+  border-color: transparent;
+  box-shadow: 0 8px 18px rgba(4, 54, 167, 0.17);
+  color: #fff;
+}
+
+.mini-page .mini-danger {
+  background: var(--c-danger-soft);
+  border-color: transparent;
+  color: var(--c-danger);
+}
+
+.mini-page button[disabled] {
+  opacity: 0.56;
+  box-shadow: none;
+}
+
+.mini-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.mini-filters button {
+  margin: 0;
+  min-height: 72px;
+  padding: 14px 20px;
+  border-radius: 40px;
+}
+
+.mini-filters .mini-primary {
+  background: var(--c-primary-soft);
+  border-color: var(--c-primary);
+  box-shadow: none;
+  color: var(--c-primary-dark);
+  font-weight: 700;
+}
+
+.mini-cover {
+  display: block;
+  width: 100%;
+  height: 270px;
+  margin-bottom: 20px;
+  border-radius: 18px;
+  background: linear-gradient(150deg, #eaf3ff, #e6fbf8);
+}
+
+.mini-price {
+  color: var(--c-danger);
+  font-weight: 700;
+}
+
+.mini-today {
+  color: #13734e;
+  font-weight: 600;
+}
+
+.mini-metrics {
+  display: flex;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.mini-metric {
+  flex: 1;
+  min-width: 0;
+  padding: 16px 8px;
+  border-radius: 18px;
+  background: var(--c-bg-3);
+  color: var(--c-primary-dark);
+  text-align: center;
+}
+
+.mini-metric-value {
+  display: block;
+  font-size: 36px;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.mini-metric-label {
+  display: block;
+  font-size: 24px;
+  line-height: 1.4;
+  color: var(--c-ink-2);
+}

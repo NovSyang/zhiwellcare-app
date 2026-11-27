@@ -1,3 +1,7 @@
+// 两端共用同一游戏标识，用于目录匹配及历史记录。
+export const TRAJECTORY_FOLLOW_GAME_ID = 'trajectory-follow'
+export const TRAJECTORY_FOLLOW_GAME_NAME = '8字轨迹跟随'
+
 export interface TrajectoryFollowGameConfig {
   sessionDurationMs: number
   cycleDurationMs: number

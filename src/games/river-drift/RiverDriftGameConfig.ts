@@ -1,3 +1,7 @@
+// 训练入口、目录匹配和历史回放共用同一游戏标识。
+export const RIVER_DRIFT_GAME_ID = 'river-drift'
+export const RIVER_DRIFT_GAME_NAME = '森林溪谷漂流'
+
 /** 森林溪谷漂流的全部可调参数，数值均为工程初始值。 */
 export interface RiverDriftGameConfig {
   sessionDurationMs: number

@@ -1,0 +1,47 @@
+{
+  "name": "zhiwellcare-wechat-mini",
+  "private": true,
+  "version": "0.1.0",
+  "description": "智为康乐微信小程序（独立安装和构建）",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "taro build --type weapp --watch",
+    "build": "taro build --type weapp",
+    "verify:build": "node scripts/verify-build.mjs",
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint config src scripts babel.config.cjs eslint.config.mjs --max-warnings 0"
+  },
+  "dependencies": {
+    "@babel/runtime": "^7.24.4",
+    "@tarojs/components": "4.3.3",
+    "@tarojs/runtime": "4.3.3",
+    "@tarojs/shared": "4.3.3",
+    "@tarojs/taro": "4.3.3",
+    "pinia": "3.0.4",
+    "vue": "3.5.42"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.4",
+    "@eslint/js": "^9.0.0",
+    "@tarojs/cli": "4.3.3",
+    "@tarojs/plugin-framework-vue3": "4.3.3",
+    "@tarojs/plugin-platform-weapp": "4.3.3",
+    "@tarojs/webpack5-runner": "4.3.3",
+    "@types/node": "^22.0.0",
+    "@vue/babel-plugin-jsx": "^1.2.2",
+    "@vue/compiler-sfc": "3.5.42",
+    "@vue/shared": "3.5.42",
+    "babel-preset-taro": "4.3.3",
+    "eslint": "^9.0.0",
+    "eslint-plugin-vue": "^10.0.0",
+    "postcss": "^8.5.6",
+    "typescript": "~5.8.0",
+    "typescript-eslint": "^8.0.0",
+    "vue-eslint-parser": "^10.0.0",
+    "vue-loader": "^17.4.2",
+    "vue-tsc": "^2.2.0",
+    "webpack": "5.91.0"
+  }
+}

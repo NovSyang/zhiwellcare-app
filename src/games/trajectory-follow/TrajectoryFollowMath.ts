@@ -29,7 +29,8 @@ export function createReferenceSamples(config: TrajectoryFollowGameConfig): Traj
   for (let elapsedMs = 0; elapsedMs <= duration; elapsedMs += interval) {
     samples.push(getTrajectoryPoint(elapsedMs, config))
   }
-  if (samples.at(-1)?.elapsedMs !== duration) samples.push(getTrajectoryPoint(duration, config))
+  // 用数组索引取末项，兼容较旧的微信 JS 运行环境。
+  if (samples[samples.length - 1]?.elapsedMs !== duration) samples.push(getTrajectoryPoint(duration, config))
   return samples
 }
 

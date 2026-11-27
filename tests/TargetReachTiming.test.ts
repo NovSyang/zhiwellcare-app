@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GameInput } from '../src/core/game-input/GameInput'
 import { TrainingSession } from '../src/core/training/TrainingSession'
 import type { TargetAttemptResult, TargetReachTrainingResult } from '../src/games/target-reach/TargetReachTrainingResult'
-import { TargetReachGame } from '../src/games/target-reach/TargetReachGame'
+import { TargetReachController } from '../src/games/target-reach/TargetReachController'
 import type { TargetReachGameConfig } from '../src/games/target-reach/TargetReachGameConfig'
 import type { TargetReachReplayEvent } from '../src/games/target-reach/replay/TargetReachReplayEvent'
 
@@ -21,9 +21,11 @@ interface GameInternals {
   update(now: number): void
 }
 
-/** 不挂载 Pixi Canvas，直接验证游戏时间轴与目标判定的纯运行逻辑。 */
-function createPlayingGame(): { game: TargetReachGame; internals: GameInternals } {
-  const game = new TargetReachGame(config)
+// 控制器接受可替换时钟，测试不依赖 Pixi 或 Canvas。
+const clock = { nowMonotonicMs: () => performance.now() }
+
+function createPlayingGame(): { game: TargetReachController; internals: GameInternals } {
+  const game = new TargetReachController(clock, config)
   const internals = game as unknown as GameInternals
   internals.session.start(1, 0)
   game.setInput(neutral(1))
@@ -33,7 +35,7 @@ function createPlayingGame(): { game: TargetReachGame; internals: GameInternals 
 
 afterEach(() => vi.restoreAllMocks())
 
-describe('TargetReachGame 暂停计时', () => {
+describe('四方挥腕挑战控制器', () => {
   it('无暂停时以有效训练时间记录反应与到达时间', () => {
     const { game, internals } = createPlayingGame()
     game.setInput(onTarget(501)); internals.update(501)
@@ -97,7 +99,7 @@ describe('TargetReachGame 暂停计时', () => {
 
   it('成功后保留 250ms 完成反馈，期间不重复计分或生成新目标', () => {
     const events: TargetReachReplayEvent[] = []
-    const game = new TargetReachGame(config, { onReplayEvent: (event) => events.push(event) })
+    const game = new TargetReachController(clock, config, { onReplayEvent: (event) => events.push(event) })
     const internals = game as unknown as GameInternals
     internals.session.start(1, 0)
     game.setInput(neutral(1)); internals.update(1)
@@ -115,7 +117,7 @@ describe('TargetReachGame 暂停计时', () => {
 
   it('最后一个目标也先展示完成反馈，再结束整局', () => {
     const completed: TargetReachTrainingResult[] = []
-    const game = new TargetReachGame({ ...config, targetCount: 1 }, { onCompleted: (result) => completed.push(result) })
+    const game = new TargetReachController(clock, { ...config, targetCount: 1 }, { onCompleted: (result) => completed.push(result) })
     const internals = game as unknown as GameInternals
     internals.session.start(1, 0)
     game.setInput(neutral(1)); internals.update(1)
@@ -143,7 +145,7 @@ describe('TargetReachGame 暂停计时', () => {
 
   it('记录目标与暂停事件，并使用非负有效训练时间', () => {
     const events: TargetReachReplayEvent[] = []
-    const game = new TargetReachGame(config, { onReplayEvent: (event) => events.push(event) })
+    const game = new TargetReachController(clock, config, { onReplayEvent: (event) => events.push(event) })
     const internals = game as unknown as GameInternals
     internals.session.start(1, 0)
     game.setInput(neutral(1)); internals.update(1)
@@ -153,5 +155,38 @@ describe('TargetReachGame 暂停计时', () => {
     expect(events.map((event) => event.type)).toEqual(['target-start', 'pause', 'resume', 'target-success'])
     expect(events.every((event) => event.elapsedMs >= 0)).toBe(true)
     expect(events[0]).toMatchObject({ payload: { index: 1, direction: 'right', targetX: 0.7, targetY: 0 } })
+  })
+
+  it('固定输入下保留目标顺序、超时、结果与回放时间轴', () => {
+    const replay: TargetReachReplayEvent[] = []
+    const results: TargetReachTrainingResult[] = []
+    const game = new TargetReachController(
+      { nowMonotonicMs: () => 10 },
+      { ...config, targetCount: 2, enabledDirections: ['left', 'right'] },
+      { onReplayEvent: (event) => replay.push(event), onCompleted: (result) => results.push(result) },
+      () => 0,
+    )
+    game.setInput(neutral(1_700_000_000_000))
+    game.start()
+    game.update(3010)
+    game.setInput({ ...neutral(1_700_000_000_200), x: -0.7 })
+    game.update(3210)
+    game.update(3510)
+    game.setInput(neutral(1_700_000_000_750))
+    game.update(3760)
+    game.pause(3800)
+    game.resume(4800)
+    game.update(12_760)
+    game.update(12_761)
+
+    expect(replay.map(({ type, elapsedMs }) => [type, elapsedMs])).toEqual([
+      ['target-start', 0], ['target-success', 500], ['target-start', 750],
+      ['pause', 790], ['resume', 790], ['target-failed', 8750],
+    ])
+    expect(results[0]).toMatchObject({
+      durationMs: 8751, successTargets: 1, failedTargets: 1,
+      averageReactionTimeMs: 200, averageReachTimeMs: 500,
+      attempts: [{ direction: 'left', success: true }, { direction: 'right', success: false }],
+    })
   })
 })

@@ -1,4 +1,5 @@
 import type { TrainingSessionState } from './TrainingSessionState'
+import type { IClock } from '../time/IClock'
 
 export interface TrainingSessionSnapshot {
   state: TrainingSessionState
@@ -13,17 +14,19 @@ export class TrainingSession {
   private state: TrainingSessionState = 'idle'
   private countdownDurationMs = 3000
   private countdownStartedAt = 0
-  private playingStartedAt = 0
+  private playingStartedAt: number | null = null
   private pausedAt = 0
   private pausedFrom: 'countdown' | 'playing' | null = null
   private pausedCountdownRemainingMs = 0
   private totalPausedMs = 0
   private completedAt: number | null = null
 
-  start(now = performance.now(), countdownMs = 3000): void {
+  constructor(private readonly clock: Pick<IClock, 'nowMonotonicMs'>) {}
+
+  start(now = this.clock.nowMonotonicMs(), countdownMs = 3000): void {
     this.countdownDurationMs = Math.max(0, countdownMs)
     this.countdownStartedAt = now
-    this.playingStartedAt = this.countdownDurationMs === 0 ? now : 0
+    this.playingStartedAt = this.countdownDurationMs === 0 ? now : null
     this.pausedAt = 0
     this.pausedFrom = null
     this.pausedCountdownRemainingMs = 0
@@ -32,14 +35,14 @@ export class TrainingSession {
     this.state = this.countdownDurationMs === 0 ? 'playing' : 'countdown'
   }
 
-  update(now = performance.now()): void {
+  update(now = this.clock.nowMonotonicMs()): void {
     if (this.state === 'countdown' && now - this.countdownStartedAt >= this.countdownDurationMs) {
       this.playingStartedAt = now
       this.state = 'playing'
     }
   }
 
-  pause(now = performance.now()): void {
+  pause(now = this.clock.nowMonotonicMs()): void {
     if (this.state !== 'playing' && this.state !== 'countdown') return
     this.pausedFrom = this.state
     if (this.state === 'countdown') {
@@ -50,7 +53,7 @@ export class TrainingSession {
     this.state = 'paused'
   }
 
-  resume(now = performance.now()): void {
+  resume(now = this.clock.nowMonotonicMs()): void {
     if (this.state !== 'paused') return
     if (this.pausedFrom === 'countdown') {
       this.countdownStartedAt = now - (this.countdownDurationMs - this.pausedCountdownRemainingMs)
@@ -64,12 +67,12 @@ export class TrainingSession {
     this.pausedCountdownRemainingMs = 0
   }
 
-  complete(now = performance.now()): void {
+  complete(now = this.clock.nowMonotonicMs()): void {
     if (this.state !== 'playing' && this.state !== 'paused') return
     this.finish(now, 'completed')
   }
 
-  abort(now = performance.now()): void {
+  abort(now = this.clock.nowMonotonicMs()): void {
     if (this.state === 'idle' || this.state === 'completed' || this.state === 'aborted') return
     this.finish(now, 'aborted')
   }
@@ -77,7 +80,7 @@ export class TrainingSession {
   reset(): void {
     this.state = 'idle'
     this.countdownStartedAt = 0
-    this.playingStartedAt = 0
+    this.playingStartedAt = null
     this.pausedAt = 0
     this.pausedFrom = null
     this.pausedCountdownRemainingMs = 0
@@ -85,14 +88,15 @@ export class TrainingSession {
     this.completedAt = null
   }
 
-  getSnapshot(now = performance.now()): TrainingSessionSnapshot {
+  getSnapshot(now = this.clock.nowMonotonicMs()): TrainingSessionSnapshot {
     const countdownRemainingMs = this.state === 'countdown'
       ? Math.max(0, this.countdownDurationMs - (now - this.countdownStartedAt))
       : this.state === 'paused' && this.pausedFrom === 'countdown'
         ? this.pausedCountdownRemainingMs
         : 0
     const end = this.completedAt ?? (this.state === 'paused' ? this.pausedAt : now)
-    const playingElapsedMs = this.playingStartedAt === 0
+    // 单调时钟可以从零开始，用 null 表示训练尚未开始。
+    const playingElapsedMs = this.playingStartedAt === null
       ? 0
       : Math.max(0, end - this.playingStartedAt - this.totalPausedMs)
 
@@ -100,8 +104,7 @@ export class TrainingSession {
       state: this.state,
       countdownRemainingMs,
       playingElapsedMs,
-      // 时间戳可能为 0，不能使用逻辑或运算符把它误判为未开始。
-      startedAt: this.playingStartedAt > 0 ? this.playingStartedAt : null,
+      startedAt: this.playingStartedAt,
       completedAt: this.completedAt,
     }
   }

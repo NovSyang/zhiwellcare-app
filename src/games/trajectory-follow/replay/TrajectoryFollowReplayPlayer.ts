@@ -5,10 +5,15 @@ import type {
   ReplayPlayerSnapshot,
   ReplayPlayerState,
 } from '../../../core/replay/ITrainingReplayPlayer'
-import { clamp, downsampleForDisplay, sampleAtElapsed } from '../../../core/replay/ReplayMath'
-import type { ReplayEvent, TrainingReplay } from '../../../core/replay/TrainingReplay'
+import { downsampleForDisplay, sampleAtElapsed } from '../../../core/replay/ReplayMath'
+import type { TrainingReplay } from '../../../core/replay/TrainingReplay'
 import { copyTrainingReplay } from '../../../core/replay/TrainingReplayCopy'
 import type { TrajectoryReferenceSample } from '../TrajectoryFollowMath'
+
+import { extractReferenceSamples } from './TrajectoryFollowReplayTimeline'
+
+// 保留原模块的导出入口，兼容已有回放调用方。
+export { extractReferenceSamples } from './TrajectoryFollowReplayTimeline'
 
 /** 只播放保存的患者轨迹和参考路径，不重新计算 8 字公式或训练指标。 */
 export class TrajectoryFollowReplayPlayer implements ITrainingReplayPlayer {
@@ -179,18 +184,4 @@ export class TrajectoryFollowReplayPlayer implements ITrainingReplayPlayer {
     const snapshot = this.getSnapshot()
     for (const listener of this.listeners) listener(snapshot)
   }
-}
-
-/** 从保存事件中严格读取参考样本，缺失时让页面保持静态而不是重算路径。 */
-export function extractReferenceSamples(events: readonly ReplayEvent[]): TrajectoryReferenceSample[] {
-  const event = events.find((item) => item.type === 'reference-path')
-  if (!event?.payload || typeof event.payload !== 'object') return []
-  const values = (event.payload as { samples?: unknown }).samples
-  if (!Array.isArray(values)) return []
-  return values.flatMap((value) => {
-    if (!value || typeof value !== 'object') return []
-    const sample = value as Partial<TrajectoryReferenceSample>
-    if (![sample.elapsedMs, sample.x, sample.y].every((item) => typeof item === 'number' && Number.isFinite(item))) return []
-    return [{ elapsedMs: Math.max(0, Math.round(sample.elapsedMs as number)), x: clamp(sample.x as number, -1, 1), y: clamp(sample.y as number, -1, 1) }]
-  }).sort((a, b) => a.elapsedMs - b.elapsedMs)
 }

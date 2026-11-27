@@ -33,12 +33,21 @@ export function createDefaultMotionProfile(now = Date.now()): MotionProfile {
 /** 兼容需要默认对象的调用方；保存前服务会生成独立副本。 */
 export const defaultMotionProfile = createDefaultMotionProfile()
 
+/** 保留全部活动范围字段，并隔离界面和服务之间的可变对象。 */
+export function copyMotionProfile(profile: MotionProfile): MotionProfile {
+  return {
+    ...profile,
+    measuredRange: profile.measuredRange ? { ...profile.measuredRange } : null,
+    activeRange: { ...profile.activeRange },
+  }
+}
+
 /** 将 Profile 中实际训练使用的范围转换为输入处理器配置。 */
 export function motionConfigFromProfile(profile: MotionProfile): MotionConfig {
   return {
     horizontalDeadZone: profile.horizontalDeadZone,
     verticalDeadZone: profile.verticalDeadZone,
-    range: structuredClone(profile.activeRange),
+    range: { ...profile.activeRange },
   }
 }
 
@@ -60,8 +69,8 @@ export function profileFromMeasuredRange(
   now = Date.now(),
 ): MotionProfile {
   return {
-    ...structuredClone(previous),
-    measuredRange: structuredClone(measuredRange),
+    ...previous,
+    measuredRange: { ...measuredRange },
     activeRange: activeRangeFromMeasured(measuredRange, previous.trainingRatio),
     updatedAt: now,
   }

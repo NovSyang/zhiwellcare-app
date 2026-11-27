@@ -15,7 +15,7 @@ export function copyTrainingReplay(replay: TrainingReplay): TrainingReplay {
       ? source.samples.map(copySample).filter((sample): sample is TrainingReplay['samples'][number] => sample !== null)
       : [],
     events: Array.isArray(source.events)
-      ? source.events.map(copyEvent).filter((event): event is ReplayEvent => event !== null)
+      ? source.events.map(copyReplayEvent).filter((event): event is ReplayEvent => event !== null)
       : [],
   }
 }
@@ -31,7 +31,8 @@ function copySample(value: unknown): TrainingReplay['samples'][number] | null {
   }
 }
 
-function copyEvent(value: unknown): ReplayEvent | null {
+/** 复制可持久化的事件，用于录制和读取的统一边界。 */
+export function copyReplayEvent(value: unknown): ReplayEvent | null {
   if (!value || typeof value !== 'object') return null
   const event = value as Partial<ReplayEvent>
   if (typeof event.type !== 'string' || !isFiniteNumber(event.elapsedMs)) return null
@@ -54,7 +55,7 @@ function copyPlainValue(value: unknown, seen: WeakSet<object>, depth: number): u
     seen.delete(value)
     return copied
   }
-  const copied: Record<string, unknown> = {}
+  const copied: Record<string, unknown> = Object.create(null)
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
     const safeItem = copyPlainValue(item, seen, depth + 1)
     if (safeItem !== undefined) copied[key] = safeItem

@@ -64,6 +64,7 @@
 # Node.js 22+
 npm install
 npm run test          # vitest（含目录匹配 / 上报载荷等新用例）
+npm run typecheck:shared # 检查 APP 与小程序共用逻辑的类型及平台依赖
 npm run version:check # 版本基线一致性（release-version.json = 0.1.0）
 npm run dev           # 浏览器预览（BLE 不可用，界面与游戏可预览）
 npm run build         # vue-tsc + vite build（产物 dist/ 供三端壳复用）
@@ -80,6 +81,10 @@ npm run android:build:debug  # Android APK（BLE 走 Capacitor bluetooth-le）
 
 官网安装包托管、固定二维码、版本替换与发布验收见 [官网下载维护说明](docs/website-download.md)。下载页提供已公开的预览安装包，应用内更新继续使用现有 Gitee 通道。
 
+### 微信小程序
+
+微信小程序位于 `apps/wechat-mini`，使用独立的 npm 依赖和 Taro 构建。它与 APP 共用 BS-BT91 协议、活动范围计算和四款游戏的训练逻辑，并在微信内保存训练成绩与回放。现场已反馈小程序相关测试基本正常。开发者工具导入方式、预览配置和提审前待验项见 [微信小程序 README](apps/wechat-mini/README.md)。
+
 ## 七、目录速览
 
 ```
@@ -87,13 +92,14 @@ src/
 ├─ app/         路由、全局服务装配（AppServices：连接/目录/上报/更新单例）
 ├─ core/        抽象适配层（目录 catalog / 传感器 / 运动 / 游戏契约 / 训练 / 上报 / 更新）
 ├─ platform/    Capacitor·Tauri·Web 三端适配注入（BLE/常亮/返回/更新/生命周期）
-├─ games/       PixiJS 8 游戏（四方挥腕挑战、8字轨迹跟随）与注册表
+├─ games/       四款游戏的共享训练逻辑、APP PixiJS 8 渲染与注册表
 ├─ views/       页面（device/games/courses/mall/mine + 功能页）
 ├─ components/  AppTabBar、设备、历史、更新、校准等组件
 ├─ data/        Mock 目录/课程/商品数据（等价后端配置表快照）
 └─ stores/      Pinia（sensor / deviceLibrary 多设备库）
 android/  Capacitor Android 壳（包名 com.zhiwellcare.app）
 src-tauri/ Tauri 2 Windows 壳（identifier com.zhiwellcare.app）
+apps/wechat-mini/ Taro 微信小程序（原生 Canvas 2D、微信 BLE、本地存储）
 ```
 
 ## 八、后端对接（规划，未实现）

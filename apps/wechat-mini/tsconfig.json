@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": ["node", "@tarojs/taro"],
+    "paths": {
+      "@/shared/core": ["../../src/core/shared.ts"],
+      "@/shared/courses": ["../../src/data/courses.ts"],
+      "@/shared/mall": ["../../src/data/mall.ts"],
+      "@/shared/target-replay": ["../../src/games/target-reach/replay/TargetReachReplayTimeline.ts"],
+      "@/shared/target-viewport": ["../../src/games/target-reach/TargetReachViewportMapper.ts"],
+      "@/shared/target-controller": ["../../src/games/target-reach/TargetReachController.ts"],
+      "@/shared/target-config": ["../../src/games/target-reach/TargetReachGameConfig.ts"],
+      "@/shared/target-result": ["../../src/games/target-reach/TargetReachResultPresentation.ts"],
+      "@/shared/trajectory": ["../../src/games/trajectory-follow/shared.ts"],
+      "@/shared/river": ["../../src/games/river-drift/shared.ts"],
+      "@/shared/kart": ["../../src/games/kart-racing/shared.ts"]
+    }
+  },
+  "include": ["config/**/*.ts", "src/**/*.ts", "src/**/*.vue"]
+}

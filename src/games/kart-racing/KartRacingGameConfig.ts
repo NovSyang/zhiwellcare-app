@@ -1,3 +1,7 @@
+// 训练入口、目录匹配和历史回放共用同一游戏标识。
+export const KART_RACING_GAME_ID = 'kart-racing'
+export const KART_RACING_GAME_NAME = '欢乐卡丁车'
+
 /** 欢乐卡丁车的全部可调参数，单位统一使用内部赛道距离和毫秒。 */
 export interface KartRacingGameConfig {
   trackLength: number

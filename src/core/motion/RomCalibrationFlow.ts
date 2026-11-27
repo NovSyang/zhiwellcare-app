@@ -100,7 +100,8 @@ export class RomCalibrationFlow {
   }
 
   finish(): MotionRange | null {
-    return this.phase === 'summary' && this.summary ? structuredClone(this.summary) : null
+    // 方向范围由四个数值组成，返回独立对象给页面保存。
+    return this.phase === 'summary' && this.summary ? { ...this.summary } : null
   }
 
   getSnapshot(now: number): RomCalibrationFlowSnapshot {
@@ -112,7 +113,7 @@ export class RomCalibrationFlow {
       countdown: this.countdown,
       measurementDurationMs: this.calibrator.durationMs,
       calibration: this.calibrator.getSnapshot(now),
-      summary: this.summary ? structuredClone(this.summary) : null,
+      summary: this.summary ? { ...this.summary } : null,
     }
   }
 

@@ -2,7 +2,7 @@ import { Container, FillGradient, Graphics } from 'pixi.js'
 import type { RiverDriftGameConfig } from '../RiverDriftGameConfig'
 import type { RiverDriftViewport } from '../RiverDriftViewport'
 import { riverDriftToScreen } from '../RiverDriftViewport'
-import type { RiverDriftSegment } from '../RiverDriftWorld'
+import { riverDriftCenterAt, type RiverDriftSegment } from '../RiverDriftWorld'
 import { riverDriftEnvironmentScale, riverDriftPerspectiveScale } from './RiverDriftPerspective'
 import { riverDriftColors } from './RiverDriftVisualStyle'
 
@@ -103,15 +103,8 @@ export class RiverDriftEnvironmentRenderer {
   }
 }
 
-/** 河流与回放共用相同的中心线插值规则。 */
-export function riverDriftCenterAt(segments: readonly RiverDriftSegment[], y: number): number {
-  const sorted = [...segments].sort((first, second) => first.y - second.y)
-  if (sorted.length === 0) return 0.5
-  const segment = sorted.find((item) => y >= item.y && y <= item.y + item.height)
-    ?? (y < sorted[0].y ? sorted[0] : sorted.at(-1)!)
-  const ratio = Math.max(0, Math.min(1, (y - segment.y) / Math.max(0.001, segment.height)))
-  return segment.startCenterX + (segment.endCenterX - segment.startCenterX) * ratio
-}
+// 保持原美术模块的中心线导出入口。
+export { riverDriftCenterAt } from '../RiverDriftWorld'
 
 function flatten(points: readonly { x: number; y: number }[]): number[] {
   return points.flatMap((point) => [point.x, point.y])

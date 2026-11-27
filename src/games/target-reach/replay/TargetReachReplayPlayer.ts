@@ -2,55 +2,17 @@ import { Application, Container, Graphics, Text } from 'pixi.js'
 import type { ITrainingReplayPlayer, ReplayMode, ReplayPlayerSnapshot, ReplayPlayerState, ReplayRenderContext } from '../../../core/replay/ITrainingReplayPlayer'
 import { downsampleForDisplay, sampleAtElapsed } from '../../../core/replay/ReplayMath'
 import { copyTrainingReplay } from '../../../core/replay/TrainingReplayCopy'
-import type { ReplayEvent, TrainingReplay } from '../../../core/replay/TrainingReplay'
-import { defaultTargetReachGameConfig, type TargetReachGameConfig } from '../TargetReachGameConfig'
-import { createTargetReachViewport, getPlayerRadiusPx, normalizedToScreen, type TargetReachViewport } from '../TargetReachViewportMapper'
+import type { TrainingReplay } from '../../../core/replay/TrainingReplay'
+import { normalizedToScreen, type TargetReachViewport } from '../TargetReachViewportMapper'
+import {
+  createTargetReachReplayGeometry, resolveTargetReachGameConfig, TargetReachReplayTimeline,
+  type HistoricalTarget, type TargetReachReplayGeometry,
+} from './TargetReachReplayTimeline'
 
 export type { ReplayMode, ReplayPlayerSnapshot, ReplayPlayerState } from '../../../core/replay/ITrainingReplayPlayer'
 export { copyTrainingReplay } from '../../../core/replay/TrainingReplayCopy'
 
-interface HistoricalTarget {
-  index: number
-  x: number
-  y: number
-  outcome: 'success' | 'failed' | null
-}
-
-// 回放没有训练 HUD，四边使用一致边距，但坐标比例与实时训练完全相同。
-const REPLAY_VIEWPORT_INSETS = { top: 24, right: 24, bottom: 24, left: 24 } as const
-
-/** TargetReach 回放在当前舞台中使用的统一视口与视觉半径。 */
-export interface TargetReachReplayGeometry {
-  viewport: TargetReachViewport
-  playerRadiusPx: number
-  targetRadiusPx: number
-}
-
-/** 旧记录或异常配置只覆盖有效正数，其余字段继续使用当前默认值。 */
-export function resolveTargetReachGameConfig(value: unknown): TargetReachGameConfig {
-  const resolved = structuredClone(defaultTargetReachGameConfig)
-  if (!value || typeof value !== 'object') return resolved
-  const candidate = value as Record<string, unknown>
-  for (const key of ['targetDistance', 'targetRadius', 'playerRadius'] as const) {
-    const next = candidate[key]
-    if (typeof next === 'number' && Number.isFinite(next) && next > 0) resolved[key] = next
-  }
-  return resolved
-}
-
-/** 几何计算保持纯函数，便于验证不同尺寸下与正式训练使用相同半径规则。 */
-export function createTargetReachReplayGeometry(
-  width: number,
-  height: number,
-  config: TargetReachGameConfig,
-): TargetReachReplayGeometry {
-  const viewport = createTargetReachViewport(width, height, REPLAY_VIEWPORT_INSETS)
-  return {
-    viewport,
-    playerRadiusPx: getPlayerRadiusPx(viewport.interactionScale, config.playerRadius),
-    targetRadiusPx: config.targetRadius * viewport.interactionScale,
-  }
-}
+export { createTargetReachReplayGeometry, resolveTargetReachGameConfig, type TargetReachReplayGeometry } from './TargetReachReplayTimeline'
 
 /**
  * 只绘制已保存的 TargetReach 历史事实。
@@ -59,7 +21,8 @@ export function createTargetReachReplayGeometry(
 export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
   private app: Application | null = null
   private replay: TrainingReplay | null = null
-  private gameConfig = structuredClone(defaultTargetReachGameConfig)
+  private gameConfig = resolveTargetReachGameConfig(undefined)
+  private timeline = new TargetReachReplayTimeline([])
   private mode: ReplayMode = 'dynamic'
   private state: ReplayPlayerState = 'idle'
   private currentTimeMs = 0
@@ -92,6 +55,7 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
   load(replay: TrainingReplay, context?: ReplayRenderContext): void {
     // 调用方可能传入 Vue Proxy；显式复制基础字段，避免 structuredClone 直接克隆 Proxy。
     this.replay = copyTrainingReplay(replay)
+    this.timeline = new TargetReachReplayTimeline(this.replay.events)
     this.gameConfig = resolveTargetReachGameConfig(context?.gameConfig)
     this.currentTimeMs = 0
     this.state = 'paused'
@@ -185,10 +149,11 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
     this.targetGraphic!.clear()
     this.clearLabels()
     this.drawCenter(geometry.viewport)
-    const target = this.targetAt(this.currentTimeMs)
+    const target = this.timeline.targetAt(this.currentTimeMs)
     if (target) this.drawTarget(target, geometry)
     if (point) {
-      this.drawPath(replay.samples.filter((sample) => sample.elapsedMs >= this.currentTargetStartedAt(this.currentTimeMs) && sample.elapsedMs <= this.currentTimeMs), 0x68d391, 3, geometry.viewport)
+      const startedAt = this.timeline.currentTargetStartedAt(this.currentTimeMs)
+      this.drawPath(replay.samples.filter((sample) => sample.elapsedMs >= startedAt && sample.elapsedMs <= this.currentTimeMs), 0x68d391, 3, geometry.viewport)
       const screen = normalizedToScreen(point, geometry.viewport)
       this.playerGraphic!.clear().circle(screen.x, screen.y, geometry.playerRadiusPx).fill(0x68d391)
     } else this.playerGraphic!.clear()
@@ -202,7 +167,7 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
     this.clearLabels()
     this.drawCenter(geometry.viewport)
     this.drawPath(downsampleForDisplay(replay.samples), 0x8fd8ff, 2, geometry.viewport)
-    for (const target of this.allTargets()) this.drawTarget(target, geometry, true)
+    for (const target of this.timeline.allTargets()) this.drawTarget(target, geometry, true)
   }
 
   private drawPath(samples: readonly { x: number; y: number }[], color: number, width: number, viewport: TargetReachViewport): void {
@@ -235,39 +200,6 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
     this.targetGraphic!.circle(center.x, center.y, 8).stroke({ width: 2, color: 0x91a3ba, alpha: 0.8 })
   }
 
-  private targetAt(elapsedMs: number): HistoricalTarget | null {
-    let current: HistoricalTarget | null = null
-    for (const event of this.sortedEvents()) {
-      if (event.elapsedMs > elapsedMs) break
-      if (isTargetStart(event)) current = { index: event.payload.index, x: event.payload.targetX, y: event.payload.targetY, outcome: null }
-      if (isTargetOutcome(event) && current?.index === event.payload.index) current = null
-    }
-    return current
-  }
-
-  private currentTargetStartedAt(elapsedMs: number): number {
-    let startedAt = 0
-    for (const event of this.sortedEvents()) {
-      if (event.elapsedMs > elapsedMs) break
-      if (isTargetStart(event)) startedAt = event.elapsedMs
-    }
-    return startedAt
-  }
-
-  private allTargets(): HistoricalTarget[] {
-    const targets = new Map<number, HistoricalTarget>()
-    for (const event of this.sortedEvents()) {
-      if (isTargetStart(event)) targets.set(event.payload.index, { index: event.payload.index, x: event.payload.targetX, y: event.payload.targetY, outcome: null })
-      if (isTargetOutcome(event)) {
-        const target = targets.get(event.payload.index)
-        if (target) target.outcome = event.type === 'target-success' ? 'success' : 'failed'
-      }
-    }
-    return [...targets.values()]
-  }
-
-  private sortedEvents(): ReplayEvent[] { return [...(this.replay?.events ?? [])].sort((a, b) => a.elapsedMs - b.elapsedMs) }
-
   private currentGeometry(): TargetReachReplayGeometry {
     const screen = this.app!.screen
     return createTargetReachReplayGeometry(screen.width, screen.height, this.gameConfig)
@@ -276,14 +208,4 @@ export class TargetReachReplayPlayer implements ITrainingReplayPlayer {
   private clearLabels(): void { this.labels.removeChildren().forEach((label) => label.destroy()) }
 
   private publish(): void { const snapshot = this.getSnapshot(); for (const callback of this.listeners) callback(snapshot) }
-}
-
-function isTargetStart(event: ReplayEvent): event is ReplayEvent & { type: 'target-start'; payload: { index: number; targetX: number; targetY: number } } {
-  const payload = event.payload as Partial<{ index: number; targetX: number; targetY: number }> | undefined
-  return event.type === 'target-start' && typeof payload?.index === 'number' && typeof payload.targetX === 'number' && typeof payload.targetY === 'number'
-}
-
-function isTargetOutcome(event: ReplayEvent): event is ReplayEvent & { type: 'target-success' | 'target-failed'; payload: { index: number } } {
-  const payload = event.payload as Partial<{ index: number }> | undefined
-  return (event.type === 'target-success' || event.type === 'target-failed') && typeof payload?.index === 'number'
 }

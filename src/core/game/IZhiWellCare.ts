@@ -1,8 +1,8 @@
 import type { GameInput } from '../game-input/GameInput'
 
-/** 正式训练游戏的最小生命周期约定，避免过早引入复杂基类。 */
-export interface IZhiWellCare {
-  mount(container: HTMLElement): Promise<void>
+/** 各平台自行声明挂载表面的类型，训练生命周期可以共享。 */
+export interface IZhiWellCare<TSurface = unknown> {
+  mount(container: TSurface): Promise<void>
   setInput(input: GameInput): void
   start(): void
   pause(): void

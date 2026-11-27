@@ -35,7 +35,8 @@ export function getKartTrackSegment(segments: readonly KartTrackSegment[], dista
   if (segments.length === 0) throw new Error('卡丁车赛道至少需要一个赛段。')
   const safeDistance = Number.isFinite(distance) ? distance : 0
   return segments.find((segment) => safeDistance >= segment.startDistance && safeDistance < segment.startDistance + segment.length)
-    ?? (safeDistance < segments[0].startDistance ? segments[0] : segments.at(-1)!)
+    // 直接读取末段，兼容较早的小程序 JS 运行环境。
+    ?? (safeDistance < segments[0].startDistance ? segments[0] : segments[segments.length - 1])
 }
 
 /** 累加前方赛段曲率，供伪 3D 道路中心投影使用。 */

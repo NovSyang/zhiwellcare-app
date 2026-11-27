@@ -3,7 +3,7 @@ import { StorageKeys } from '../storage/StorageKeys'
 import type { IMotionProfileRepository } from './IMotionProfileRepository'
 import type { MotionProfile } from './MotionProfile'
 
-/** 使用 localStorage 保存当前唯一 MotionProfile，并过滤损坏或旧版本数据。 */
+/** 通过注入的键值存储保存配置，并过滤损坏或旧版本数据。 */
 export class LocalStorageMotionProfileRepository implements IMotionProfileRepository {
   constructor(private readonly store: IKeyValueStore) {}
 
@@ -12,7 +12,8 @@ export class LocalStorageMotionProfileRepository implements IMotionProfileReposi
     if (!raw) return null
     try {
       const value: unknown = JSON.parse(raw)
-      return isMotionProfile(value) ? structuredClone(value) : null
+      // JSON 解析每次都会生成新的快照。
+      return isMotionProfile(value) ? value : null
     } catch { return null }
   }
 

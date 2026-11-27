@@ -3,16 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { courses } from '../../data/courses'
 import { LocalStorageStore } from '../../core/storage/LocalStorageStore'
-
-/** 打卡本地存储 key：{ [courseId]: string[]（yyyy-MM-dd 打卡日期数组）}。 */
-const CHECKIN_KEY = 'zhiwellcare.course.checkins.v1'
-
-type CheckinMap = Record<string, string[]>
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+import { CourseCheckins, courseDayKey } from '../../core/course/CourseCheckins'
 
 const route = useRoute()
 const router = useRouter()
-const store = new LocalStorageStore()
+// APP 保留旧打卡键，改用与小程序共享的读写规则。
+const checkins = new CourseCheckins(new LocalStorageStore())
 
 const rawCourseId = computed(() => String(route.params.courseId ?? ''))
 /** 课程不存在时 course 为 null → 渲染空态。 */
@@ -23,7 +19,7 @@ const loaded = ref(false)
 const saving = ref(false)
 const errorMessage = ref('')
 
-const isCheckedIn = computed(() => checkinDates.value.includes(localDateKey(new Date())))
+const isCheckedIn = computed(() => checkinDates.value.includes(courseDayKey(new Date())))
 const recentText = computed(() => [...checkinDates.value].sort().reverse().slice(0, 3).join('、'))
 const historyText = computed(() =>
   checkinDates.value.length
@@ -33,8 +29,7 @@ const historyText = computed(() =>
 
 onMounted(async () => {
   try {
-    const map = normalizeCheckins(await store.get(CHECKIN_KEY))
-    checkinDates.value = map[rawCourseId.value] ?? []
+    checkinDates.value = await checkins.list(rawCourseId.value)
   }
   catch { checkinDates.value = [] }
   finally { loaded.value = true }
@@ -47,13 +42,7 @@ async function doCheckin(): Promise<void> {
   saving.value = true
   errorMessage.value = ''
   try {
-    const map = normalizeCheckins(await store.get(CHECKIN_KEY))
-    const day = localDateKey(new Date())
-    const list = Array.isArray(map[target.id]) ? map[target.id] : []
-    if (!list.includes(day)) list.push(day)
-    map[target.id] = [...new Set(list)].sort()
-    await store.set(CHECKIN_KEY, JSON.stringify(map))
-    checkinDates.value = map[target.id]
+    checkinDates.value = await checkins.complete(target.id, new Date())
   }
   catch (error) { errorMessage.value = error instanceof Error ? error.message : String(error) }
   finally { saving.value = false }
@@ -67,28 +56,6 @@ function goBack(): void {
 
 function goHome(): void { void router.push('/courses') }
 
-/** 本机日期 → yyyy-MM-dd（避免 UTC 时区偏差）。 */
-function localDateKey(date: Date): string {
-  const pad = (value: number) => `${value}`.padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
-
-/** 容错解析本地打卡数据；损坏或缺失时安全返回空对象。 */
-function normalizeCheckins(raw: string | null): CheckinMap {
-  if (!raw) return {}
-  try {
-    const parsed: unknown = JSON.parse(raw)
-    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return {}
-    const map: CheckinMap = {}
-    for (const [id, list] of Object.entries(parsed as Record<string, unknown>)) {
-      if (!Array.isArray(list)) continue
-      const dates = [...new Set(list.filter((item): item is string => typeof item === 'string' && DATE_RE.test(item)))].sort()
-      if (dates.length) map[id] = dates
-    }
-    return map
-  }
-  catch { return {} }
-}
 </script>
 
 <template>

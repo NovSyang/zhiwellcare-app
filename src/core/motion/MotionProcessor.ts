@@ -32,16 +32,16 @@ export class MotionProcessor {
   private calibrationSamplesY: number[] = []
 
   constructor(config: MotionConfig = defaultMotionConfig) {
-    this.config = structuredClone(config)
+    this.config = copyMotionConfig(config)
   }
 
   updateConfig(config: MotionConfig): void {
-    this.config = structuredClone(config)
+    this.config = copyMotionConfig(config)
   }
 
   /** 返回配置副本，避免调用方意外改写处理器内部状态。 */
   getConfig(): MotionConfig {
-    return structuredClone(this.config)
+    return copyMotionConfig(this.config)
   }
 
   /** 将原始姿态转换为项目统一的前后左右相对运动。 */
@@ -164,6 +164,11 @@ export class MotionProcessor {
 
 function average(values: number[]): number {
   return values.reduce((sum, value) => sum + value, 0) / values.length
+}
+
+/** 运动配置只有一层范围对象，复制后各平台都可安全修改副本。 */
+function copyMotionConfig(config: MotionConfig): MotionConfig {
+  return { ...config, range: { ...config.range } }
 }
 
 function clamp(value: number, min: number, max: number): number {

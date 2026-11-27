@@ -72,7 +72,8 @@ export class RomCalibrator {
           : '本次活动范围过小，请确认操作方向或重新测量。',
     }
     this.state = 'review'
-    return structuredClone(this.result)
+    // 结果字段均为基本类型，浅拷贝即可隔离调用方。
+    return { ...this.result }
   }
 
   accept(): boolean {
@@ -101,8 +102,8 @@ export class RomCalibrator {
       direction: this.direction,
       elapsedMs: this.state === 'measuring' ? Math.max(0, now - this.startedAt) : 0,
       sampleCount: this.samples.length,
-      result: this.result ? structuredClone(this.result) : null,
-      measuredRange: structuredClone(this.measuredRange),
+      result: this.result ? { ...this.result } : null,
+      measuredRange: { ...this.measuredRange },
     }
   }
 

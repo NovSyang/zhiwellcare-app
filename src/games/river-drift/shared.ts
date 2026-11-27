@@ -1,0 +1,10 @@
+// 跨平台只暴露训练、结果和坐标映射，Pixi 渲染留在 APP 入口。
+export * from './RiverDriftController'
+export * from './RiverDriftGameConfig'
+export * from './RiverDriftGameEvents'
+export * from './RiverDriftTrainingResult'
+export * from './RiverDriftResultPresentation'
+export * from './RiverDriftViewport'
+export * from './art/RiverDriftPerspective'
+export { riverDriftCenterAt } from './RiverDriftWorld'
+export type * from './RiverDriftWorld'

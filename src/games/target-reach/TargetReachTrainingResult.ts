@@ -64,7 +64,8 @@ export function buildTargetReachTrainingResult(
     averageReactionTimeMs: averageOrNull(attempts.filter((attempt) => attempt.reactionTimeMs !== null).map((attempt) => attempt.reactionTimeMs as number)),
     averageReachTimeMs: averageOrNull(attempts.filter((attempt) => attempt.reachTimeMs !== null).map((attempt) => attempt.reachTimeMs as number)),
     directions,
-    attempts: structuredClone(attempts),
+    // 尝试记录只含基本类型，复制每一项即可保存独立结果。
+    attempts: attempts.map((attempt) => ({ ...attempt })),
   }
 }
 

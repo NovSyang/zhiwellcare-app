@@ -1,8 +1,9 @@
 import type { GameInput } from '../game-input/GameInput'
 import { clamp, round4 } from './ReplayMath'
+import { copyReplayEvent, copyTrainingReplay } from './TrainingReplayCopy'
 import type { ReplayEvent, TrainingReplay } from './TrainingReplay'
 
-/** 将实时 GameInput 节流为适合 IndexedDB 保存与平滑回放的 25Hz 历史。 */
+/** 将实时 GameInput 节流为适合本地保存与平滑回放的 25Hz 历史。 */
 export class TrainingReplayRecorder {
   private samples: TrainingReplay['samples'] = []
   private events: ReplayEvent[] = []
@@ -28,16 +29,17 @@ export class TrainingReplayRecorder {
   }
 
   recordEvent(event: ReplayEvent): void {
-    this.events.push({ ...structuredClone(event), elapsedMs: Math.max(0, Math.round(event.elapsedMs)) })
+    const snapshot = copyReplayEvent(event)
+    if (snapshot) this.events.push(snapshot)
   }
 
   finish(durationMs: number): TrainingReplay {
-    return {
+    return copyTrainingReplay({
       schemaVersion: 1,
       durationMs: Math.max(0, Math.round(durationMs)),
       sampleRateHz: Math.round(1000 / this.sampleIntervalMs),
-      samples: structuredClone(this.samples),
-      events: structuredClone(this.events),
-    }
+      samples: this.samples,
+      events: this.events,
+    })
   }
 }

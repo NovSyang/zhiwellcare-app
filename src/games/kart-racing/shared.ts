@@ -1,0 +1,10 @@
+// 跨平台只暴露训练、结果和坐标映射，Pixi 渲染留在 APP 入口。
+export * from './KartRacingController'
+export * from './KartRacingGameConfig'
+export * from './KartRacingGameEvents'
+export * from './KartRacingTrainingResult'
+export * from './KartRacingResultPresentation'
+export * from './KartRacingViewport'
+export * from './KartRacingTrack'
+export * from './art/KartPerspective'
+export type * from './KartRacingWorld'

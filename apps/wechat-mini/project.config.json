@@ -1,0 +1,11 @@
+{
+  "miniprogramRoot": "dist/",
+  "compileType": "miniprogram",
+  "projectname": "zhiwellcare-wechat-mini",
+  "appid": "touristappid",
+  "setting": {
+    "es6": false,
+    "postcss": false,
+    "minified": false
+  }
+}

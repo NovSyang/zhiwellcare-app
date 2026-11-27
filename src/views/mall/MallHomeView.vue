@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { findGoodsById, mallCategories, mallGoods, readMallCart, writeMallCart } from '../../data/mall'
-import type { Goods, MallCartItem } from '../../data/mall'
+import { findGoodsById, mallCategories, mallGoods, type Goods } from '../../data/mall'
+import { readMallCart, writeMallCart, type MallCartItem } from '../../platform/storage/AppMallCart'
 
 type CategoryId = 'all' | 'hardware' | 'service'
 

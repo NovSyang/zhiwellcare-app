@@ -2,34 +2,16 @@ import { Application, Graphics, Text } from 'pixi.js'
 import type { GameInput } from '../../core/game-input/GameInput'
 import type { ITrainingGame } from '../../core/game/ITrainingGame'
 import type { TrainingGameEvents } from '../../core/game/TrainingGameEvents'
-import { TrainingSession } from '../../core/training/TrainingSession'
-import type { TrainingSessionState } from '../../core/training/TrainingSessionState'
-import {
-  createReferenceSamples,
-  getReferenceAt,
-  trackingError,
-  type TrajectoryReferenceSample,
-} from './TrajectoryFollowMath'
-import {
-  defaultTrajectoryFollowGameConfig,
-  type TrajectoryFollowGameConfig,
-} from './TrajectoryFollowGameConfig'
-import {
-  buildTrajectoryFollowTrainingResult,
-  type TrajectoryFollowTrainingResult,
-} from './TrajectoryFollowTrainingResult'
+import { browserClock } from '../../platform/time/BrowserClock'
+import { TrajectoryFollowController } from './TrajectoryFollowController'
+import type { TrajectoryReferenceSample } from './TrajectoryFollowMath'
+import { defaultTrajectoryFollowGameConfig, type TrajectoryFollowGameConfig } from './TrajectoryFollowGameConfig'
+import type { TrajectoryFollowTrainingResult } from './TrajectoryFollowTrainingResult'
 
-/** 使用标准化 GameInput 完成连续二维 8 字轨迹跟随训练。 */
-export class TrajectoryFollowGame implements ITrainingGame<TrajectoryFollowTrainingResult> {
+/** APP 的 Pixi 图层读取共享控制器，原有训练入口仍可直接使用。 */
+export class TrajectoryFollowGame implements ITrainingGame<TrajectoryFollowTrainingResult, HTMLElement> {
+  private readonly controller: TrajectoryFollowController
   private app: Application | null = null
-  private session = new TrainingSession()
-  private latestInput = emptyGameInput()
-  private referenceSamples: TrajectoryReferenceSample[] = []
-  private metricErrors: number[] = []
-  private patientTrail: TrajectoryReferenceSample[] = []
-  private nextMetricElapsedMs = 0
-  private currentError: number | null = null
-  private lastNotifiedState: TrainingSessionState = 'idle'
   private referenceGraphic: Graphics | null = null
   private trailGraphic: Graphics | null = null
   private playerGraphic: Graphics | null = null
@@ -39,8 +21,10 @@ export class TrajectoryFollowGame implements ITrainingGame<TrajectoryFollowTrain
 
   constructor(
     private readonly config: TrajectoryFollowGameConfig = structuredClone(defaultTrajectoryFollowGameConfig),
-    private readonly events: TrainingGameEvents<TrajectoryFollowTrainingResult> = {},
-  ) {}
+    events: TrainingGameEvents<TrajectoryFollowTrainingResult> = {},
+  ) {
+    this.controller = new TrajectoryFollowController(browserClock, config, events)
+  }
 
   async mount(container: HTMLElement): Promise<void> {
     this.destroy()
@@ -63,55 +47,22 @@ export class TrajectoryFollowGame implements ITrainingGame<TrajectoryFollowTrain
     this.resizeObserver.observe(container)
     app.ticker.add(() => {
       const now = performance.now()
-      this.update(now)
+      this.controller.update(now)
       this.render(now)
     })
   }
 
-  setInput(input: GameInput): void {
-    this.latestInput = input
-    const state = this.session.getSnapshot().state
-    if (!input.connected && (state === 'playing' || state === 'countdown')) this.pause()
-  }
+  setInput(input: GameInput): void { this.controller.setInput(input) }
 
   start(): void {
-    if (!this.latestInput.connected) throw new Error('开始训练前必须连接 BS-BT91')
-    if (!this.latestInput.calibrated) throw new Error('开始训练前必须完成中心校准')
-    this.referenceSamples = createReferenceSamples(this.config)
-    this.metricErrors = []
-    this.patientTrail = []
-    this.nextMetricElapsedMs = 0
-    this.currentError = null
-    this.events.onReplayEvent?.({ elapsedMs: 0, type: 'reference-path', payload: { samples: structuredClone(this.referenceSamples) } })
-    this.session.start(performance.now(), 3_000)
+    this.controller.start()
     this.drawReferencePath()
-    this.notifySessionState()
-    this.publishHud()
   }
 
-  pause(now = performance.now()): void {
-    const state = this.session.getSnapshot(now).state
-    if (state !== 'playing' && state !== 'countdown') return
-    this.events.onReplayEvent?.({ elapsedMs: this.getTrainingElapsedMs(now), type: 'pause' })
-    this.session.pause(now)
-    this.notifySessionState()
-    this.publishHud()
-  }
-
-  resume(now = performance.now()): void {
-    if (!this.latestInput.connected) throw new Error('传感器未连接，无法继续训练')
-    if (!this.latestInput.calibrated) throw new Error('请重新完成中心校准后继续训练')
-    if (this.session.getSnapshot(now).state !== 'paused') return
-    this.session.resume(now)
-    this.events.onReplayEvent?.({ elapsedMs: this.getTrainingElapsedMs(now), type: 'resume' })
-    this.notifySessionState()
-    this.publishHud()
-  }
-
-  abort(): void {
-    this.session.abort(performance.now())
-    this.notifySessionState()
-  }
+  pause(now?: number): void { this.controller.pause(now) }
+  resume(now?: number): void { this.controller.resume(now) }
+  abort(): void { this.controller.abort() }
+  getTrainingElapsedMs(now?: number): number { return this.controller.getTrainingElapsedMs(now) }
 
   destroy(): void {
     this.resizeObserver?.disconnect()
@@ -125,60 +76,13 @@ export class TrajectoryFollowGame implements ITrainingGame<TrajectoryFollowTrain
     this.countdownText = null
   }
 
-  getTrainingElapsedMs(now = performance.now()): number {
-    return this.session.getSnapshot(now).playingElapsedMs
-  }
-
-  private update(now: number): void {
-    this.session.update(now)
-    this.notifySessionState()
-    const snapshot = this.session.getSnapshot(now)
-    if (snapshot.state !== 'playing') return
-    if (snapshot.playingElapsedMs >= this.config.sessionDurationMs) {
-      this.complete(now)
-      return
-    }
-    if (!this.latestInput.connected || !this.latestInput.calibrated) return
-    // 使用固定有效时间点采样，页面掉帧不会改变样本时间轴。
-    while (this.nextMetricElapsedMs <= snapshot.playingElapsedMs) {
-      this.captureMetric(this.nextMetricElapsedMs)
-      this.nextMetricElapsedMs += Math.max(1, this.config.metricSampleIntervalMs)
-    }
-  }
-
-  private captureMetric(elapsedMs: number): void {
-    const guide = getReferenceAt(this.referenceSamples, elapsedMs)
-    if (!guide) return
-    this.currentError = trackingError(this.latestInput, guide)
-    this.metricErrors.push(this.currentError)
-    this.patientTrail.push({ elapsedMs: Math.round(elapsedMs), x: this.latestInput.x, y: this.latestInput.y })
-    const trailStart = elapsedMs - this.config.trailWindowMs
-    while (this.patientTrail.length > 1 && this.patientTrail[0].elapsedMs < trailStart) this.patientTrail.shift()
-    this.publishHud()
-  }
-
-  private complete(now: number): void {
-    this.session.complete(now)
-    const snapshot = this.session.getSnapshot(now)
-    const result = buildTrajectoryFollowTrainingResult(
-      snapshot.startedAt ?? now,
-      snapshot.completedAt ?? now,
-      snapshot.playingElapsedMs,
-      this.metricErrors,
-      this.config.toleranceRadius,
-    )
-    this.notifySessionState()
-    this.events.onCompleted?.(result)
-  }
-
   private render(now: number): void {
     if (!this.app || !this.playerGraphic || !this.guideGraphic || !this.trailGraphic || !this.countdownText) return
-    const snapshot = this.session.getSnapshot(now)
-    const guide = getReferenceAt(this.referenceSamples, snapshot.playingElapsedMs)
-    this.drawDot(this.playerGraphic, this.latestInput.x, this.latestInput.y, this.config.playerRadius, 0x68d391)
-    this.playerGraphic.alpha = this.latestInput.connected ? 1 : 0.35
+    const { session: snapshot, guide, input, trail } = this.controller.getFrame(now)
+    this.drawDot(this.playerGraphic, input.x, input.y, this.config.playerRadius, 0x68d391)
+    this.playerGraphic.alpha = input.connected ? 1 : 0.35
     if (guide) this.drawDot(this.guideGraphic, guide.x, guide.y, this.config.guideRadius, 0x8fd8ff, true)
-    this.drawPath(this.trailGraphic, this.patientTrail, 0x68d391, 4, 0.85)
+    this.drawPath(this.trailGraphic, trail, 0x68d391, 4, 0.85)
     if (snapshot.state === 'countdown') {
       this.countdownText.text = String(Math.max(1, Math.ceil(snapshot.countdownRemainingMs / 1_000)))
       this.countdownText.position.set(this.app.screen.width / 2, this.app.screen.height / 2)
@@ -187,7 +91,7 @@ export class TrajectoryFollowGame implements ITrainingGame<TrajectoryFollowTrain
   }
 
   private drawReferencePath(): void {
-    if (this.referenceGraphic) this.drawPath(this.referenceGraphic, this.referenceSamples, 0x4da3ff, 3, 0.55)
+    if (this.referenceGraphic) this.drawPath(this.referenceGraphic, this.controller.getFrame().reference, 0x4da3ff, 3, 0.55)
   }
 
   private drawPath(graphic: Graphics, samples: readonly Pick<TrajectoryReferenceSample, 'x' | 'y'>[], color: number, width: number, alpha: number): void {
@@ -213,35 +117,4 @@ export class TrajectoryFollowGame implements ITrainingGame<TrajectoryFollowTrain
     const padding = 70
     return { x: screen.width / 2 + x * Math.max(0, screen.width / 2 - padding), y: screen.height / 2 - y * Math.max(0, screen.height / 2 - padding) }
   }
-
-  private notifySessionState(): void {
-    const state = this.session.getSnapshot().state
-    if (state === this.lastNotifiedState) return
-    this.lastNotifiedState = state
-    this.events.onSessionStateChanged?.(state)
-  }
-
-  private publishHud(): void {
-    const snapshot = this.session.getSnapshot()
-    const ratio = this.metricErrors.length === 0 ? 0 : this.metricErrors.filter((value) => value <= this.config.toleranceRadius).length / this.metricErrors.length
-    const title = snapshot.state === 'countdown' ? '准备开始' : snapshot.state === 'paused' ? '训练已暂停' : '正在跟随'
-    this.events.onHudChanged?.({
-      title,
-      subtitle: '轨迹跟随训练',
-      metrics: [
-        { label: '当前偏差', value: this.currentError === null ? '--' : this.currentError.toFixed(2) },
-        { label: '范围内', value: `${(ratio * 100).toFixed(0)}%` },
-        { label: '训练时间', value: `${formatClock(snapshot.playingElapsedMs)} / ${formatClock(this.config.sessionDurationMs)}` },
-      ],
-    })
-  }
-}
-
-function emptyGameInput(): GameInput {
-  return { x: 0, y: 0, connected: false, calibrated: false, timestamp: 0 }
-}
-
-function formatClock(value: number): string {
-  const seconds = Math.floor(Math.max(0, value) / 1_000)
-  return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(seconds % 60).toString().padStart(2, '0')}`
 }

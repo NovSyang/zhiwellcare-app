@@ -1,10 +1,6 @@
 import { ref } from 'vue'
-import { LocalStorageMotionProfileRepository } from '../core/motion/LocalStorageMotionProfileRepository'
-import { MotionProfileService } from '../core/motion/MotionProfileService'
 import type { MotionProfile } from '../core/motion/MotionProfile'
-import { LocalStorageDeviceBindingRepository } from '../core/sensor/DeviceBinding'
-import { SensorConnectionManager } from '../core/sensor/SensorConnectionManager'
-import { SensorService } from '../core/sensor/SensorService'
+import { createSensorServices } from '../core/sensor/createSensorServices'
 import type { SensorDevice } from '../core/sensor/SensorDevice'
 import { LocalStorageStore } from '../core/storage/LocalStorageStore'
 import { IndexedDbTrainingRepository } from '../core/training/IndexedDbTrainingRepository'
@@ -22,6 +18,7 @@ import { UpdatePolicyRepository } from '../core/update/UpdatePolicyRepository'
 import { createUpdateProvider } from '../platform/update/createUpdateProvider'
 // 智为康乐新增：设备-游戏目录 / 训练上报
 import { CatalogService } from '../core/catalog/CatalogService'
+import { createAppCatalogSource } from '../platform/catalog/createAppCatalogSource'
 import { resolveDeviceModel } from '../core/catalog/tagMatching'
 import type { TrainingRecordDeviceSnapshot } from '../core/training/TrainingRecord'
 import { TrainingReportService } from '../core/reporting/TrainingReportService'
@@ -33,14 +30,13 @@ export const transport = createSensorTransport()
 export const displayService = createDisplayService()
 export const appLifecycleService = createAppLifecycleService()
 export const backButtonService = createBackButtonService()
-export const sensorService = new SensorService(transport)
 const localStore = new LocalStorageStore()
-export const connectionManager = new SensorConnectionManager(sensorService, new LocalStorageDeviceBindingRepository(localStore))
-export const motionProfileService = new MotionProfileService(new LocalStorageMotionProfileRepository(localStore), sensorService)
+// 保留 APP 的存储和传输实现，通过公共入口组装传感器与校准服务。
+export const { sensorService, connectionManager, motionProfileService } = createSensorServices(transport, localStore)
 export const trainingRepository = new IndexedDbTrainingRepository()
 
 /** 设备-游戏目录（本地 Mock ↔ Golang 后端，运行时可切换/回退）。 */
-export const catalogService = new CatalogService()
+export const catalogService = new CatalogService(createAppCatalogSource())
 
 /** 训练记录上报（local 待发队列 ↔ http 直传后端）。 */
 export const reportService = new TrainingReportService(createTrainingReportTransport())

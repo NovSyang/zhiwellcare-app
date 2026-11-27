@@ -17,8 +17,9 @@ export interface ReplayPlayerSnapshot {
 }
 
 /** 每款游戏只实现绘制，播放控制由历史面板统一提供。 */
-export interface ITrainingReplayPlayer {
-  mount(container: HTMLElement): Promise<void>
+export interface ITrainingReplayPlayer<TSurface = unknown> {
+  /** APP 和小程序可分别提供自己的绘制表面。 */
+  mount(container: TSurface): Promise<void>
   load(replay: TrainingReplay, context?: ReplayRenderContext): void
   setMode(mode: ReplayMode): void
   play(): void

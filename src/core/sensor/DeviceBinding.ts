@@ -17,7 +17,7 @@ export interface IDeviceBindingRepository {
   clear(): Promise<void>
 }
 
-/** localStorage 中保存最后一个成功连接的设备。 */
+/** 通过注入的键值存储保存最后一个成功连接的设备。 */
 export class LocalStorageDeviceBindingRepository implements IDeviceBindingRepository {
   constructor(private readonly store: IKeyValueStore) {}
 

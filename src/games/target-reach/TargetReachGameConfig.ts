@@ -1,5 +1,9 @@
 import { ALL_DIRECTIONS, type Direction } from '../../core/training/Direction'
 
+/** 两端沿用同一个游戏标识，历史不随渲染平台变化。 */
+export const TARGET_REACH_GAME_ID = 'target-reach'
+export const TARGET_REACH_GAME_NAME = '四方挥腕挑战'
+
 export interface TargetReachGameConfig {
   sessionDurationMs: number
   targetCount: number
