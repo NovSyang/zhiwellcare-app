@@ -17,8 +17,8 @@ const lockfile = JSON.parse(readFileSync(new URL('../package-lock.json', import.
 assert.equal(project.miniprogramRoot, './')
 assert.equal(project.compileType, 'miniprogram')
 assert.deepEqual(app.tabBar.list.map(({ text }) => text), ['设备', '训练', '课程', '商城', '我的'])
-assert.equal(routes.length, 13)
-assert.equal(packages.length, 4)
+assert.equal(routes.length, 17)
+assert.equal(packages.length, 5)
 
 // 版本来自小程序独立清单，锁文件与实际注入的构建号保持一致。
 assert.match(manifest.version, /^\d+\.\d+\.\d+$/)
@@ -57,6 +57,20 @@ for (const { pagePath } of app.tabBar.list) {
   assert.ok(readFileSync(join(output, `${pagePath}.js`), 'utf8').includes('mini-tab-header'), `${pagePath} 未生成页头测量节点`)
   const config = JSON.parse(readFileSync(join(output, `${pagePath}.json`), 'utf8'))
   assert.notEqual(config.disableScroll, true, `${pagePath} 禁止了降级原生滚动`)
+}
+
+// 「我的」只负责导航，四个入口的目标均为可返回的分包竖屏页面。
+const profileSource = readFileSync(new URL('../src/pages/profile/index.vue', import.meta.url), 'utf8')
+assert.doesNotMatch(profileSource, /getTrainingRepository|TrainingGameHistoryCard|MiniUpdateSettingsCard|openPrivacyContract/)
+for (const route of [
+  'features/profile/settings/index', 'features/history/overview/index',
+  'features/profile/update/index', 'features/profile/privacy/index',
+]) {
+  assert.ok(routes.includes(route) && !app.pages.includes(route), `缺少「我的」分包入口 ${route}`)
+  assert.ok(profileSource.includes(`/${route}`), `「我的」未链接 ${route}`)
+  const config = JSON.parse(readFileSync(join(output, `${route}.json`), 'utf8'))
+  assert.equal(config.pageOrientation, 'portrait', route)
+  assert.notEqual(config.disableScroll, true, route)
 }
 // 原生 Tab 的两态图标都必须来自构建包，且保持制作时的像素尺寸。
 const tabIcons = app.tabBar.list.flatMap(({ iconPath, selectedIconPath }) => [iconPath, selectedIconPath])

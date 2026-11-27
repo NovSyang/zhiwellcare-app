@@ -83,7 +83,7 @@ npm run android:build:debug  # Android APK（BLE 走 Capacitor bluetooth-le）
 
 ### 微信小程序
 
-微信小程序位于 `apps/wechat-mini`，使用独立的 npm 依赖、版本和 Taro 构建。它与 APP 共用 BS-BT91 协议、活动范围计算和四款游戏的训练逻辑，并在微信内保存训练成绩与回放。五个主 Tab 共用设备状态栏，已有绑定支持按用户偏好自动重连。「我的 → 关于与更新」显示版本并接入微信原生更新。开发者工具导入、发布和现场复测说明见 [微信小程序 README](apps/wechat-mini/README.md)。
+微信小程序位于 `apps/wechat-mini`，使用独立的 npm 依赖、版本和 Taro 构建。它与 APP 共用 BS-BT91 协议、活动范围计算和四款游戏的训练逻辑，并在微信内保存训练成绩与回放。五个主 Tab 共用设备状态栏，已有绑定支持按用户偏好自动重连。「我的」提供训练设置、训练历史、检查更新和隐私政策入口。开发者工具导入、发布和现场复测说明见 [微信小程序 README](apps/wechat-mini/README.md)。
 
 ## 七、目录速览
 

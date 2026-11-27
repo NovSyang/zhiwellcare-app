@@ -43,6 +43,22 @@ function setup() {
 }
 
 describe('微信更新与业务安全门', () => {
+  it('个人活动范围期间不提示，独立更新页就绪后可手动通过同一安全门', async () => {
+    const env = setup()
+    env.switchPage('features/settings/range/index')
+    env.safety.setForeground(true)
+    const release = env.safety.acquire('个人活动范围')
+    env.ready()
+    expect(env.service.getSnapshot().canRequest).toBe(false)
+    env.switchPage('features/profile/update/index')
+    expect(env.service.getSnapshot().canRequest).toBe(false)
+    release()
+    await vi.waitFor(() => expect(env.confirm).toHaveBeenCalledOnce())
+    expect(env.service.getSnapshot().canRequest).toBe(true)
+    await env.service.request(true)
+    expect(env.confirm).toHaveBeenCalledTimes(2)
+  })
+
   it('仅注册一次，显示原生检查、下载和失败状态，就绪优先于迟到事件', () => {
     const env = setup()
     env.service.initialize()

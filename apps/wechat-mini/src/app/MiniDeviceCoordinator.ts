@@ -163,8 +163,8 @@ export class MiniDeviceCoordinator {
 
   invalidateCalibration() {
     // 即使校准已完成，训练中断时也丢弃旧中心。
-    this.options.resetCalibration()
-    this.observeSensor(this.state, false)
+    try { this.options.resetCalibration() }
+    finally { this.observeSensor(this.state, false) }
   }
 
   /** 更新独占门由调用方持有，清理不改主动断开的偏好。 */

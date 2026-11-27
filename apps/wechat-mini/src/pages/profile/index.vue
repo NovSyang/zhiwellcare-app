@@ -1,63 +1,32 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import Taro, { useDidShow } from '@tarojs/taro'
-import { buildTrainingHistoryGroups, type TrainingRecord } from '@/shared/core'
-import { connectionSnapshot, getTrainingRepository, interactionsBlocked } from '../../app/MiniServices'
-import { navigateMini, useMiniTabPage, withMiniOperationLock } from '../../app/MiniPageSafety'
+import Taro from '@tarojs/taro'
+import { connectionSnapshot, interactionsBlocked, updateState, version } from '../../app/MiniServices'
+import { navigateMini, useMiniTabPage } from '../../app/MiniPageSafety'
+import { miniUpdateStatusText } from '../../app/MiniUpdatePresentation'
 import MiniPageHeader from '../../components/app/MiniPageHeader.vue'
 import MiniTabScrollBody from '../../components/app/MiniTabScrollBody.vue'
-import MiniUpdateSettingsCard from '../../components/app/MiniUpdateSettingsCard.vue'
-import TrainingGameHistoryCard from '../../components/history/TrainingGameHistoryCard.vue'
 
 defineOptions({ name: 'ProfilePage' })
 const { viewport, scrollStyle, fallbackPageScroll } = useMiniTabPage('pages/profile/index')
-
-const records = ref<TrainingRecord[]>([])
-const groups = computed(() => buildTrainingHistoryGroups(records.value))
-const loading = ref(false)
+const navigating = ref(false)
 const error = ref('')
-const privacyError = ref('')
 
-// 回到此页时重新读取本地摘要，反映详情页删除等操作。
-useDidShow(async () => {
-  loading.value = true
+// 首页只提供导航，训练历史等数据进入对应分包后再读取。
+const links = computed(() => [
+  { url: '/features/profile/settings/index', icon: '⚙', title: '训练设置', detail: `设备管理 · 个人活动范围 · ${connectionSnapshot.value.binding?.name || '未绑定设备'}` },
+  { url: '/features/history/overview/index', icon: '▤', title: '训练历史', detail: '查看训练成绩及回放' },
+  { url: '/features/profile/update/index', icon: '↻', title: '检查更新', detail: `${version.value.displayLabel} · ${miniUpdateStatusText(updateState.value, true)}` },
+  { url: '/features/profile/privacy/index', icon: '🔒', title: '隐私政策', detail: '数据用途与隐私保护说明' },
+])
+
+async function open(url: string) {
+  if (interactionsBlocked.value || navigating.value) return
+  navigating.value = true
   error.value = ''
-  try { records.value = await getTrainingRepository().getAll() } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : '读取训练历史失败。'
-  } finally { loading.value = false }
-})
-
-// 使用历史里的游戏 ID，已下架游戏也能进入记录列表。
-async function openHistory(gameId: string) {
-  error.value = ''
-  try {
-    await navigateMini(() => Taro.navigateTo({ url: `/features/history/list/index?gameId=${encodeURIComponent(gameId)}` }))
-  } catch {
-    error.value = '暂时无法打开游戏历史，请重试。'
-  }
-}
-
-/** 正式隐私指引由微信平台提供，本页也保留离线可读的数据说明。 */
-async function openPrivacyGuide() {
-  if (interactionsBlocked.value) return
-  privacyError.value = ''
-  if (typeof Taro.openPrivacyContract !== 'function') {
-    privacyError.value = '当前微信版本无法打开隐私保护指引。'
-    return
-  }
-  try {
-    // Taro 4.3.3 的隐私接口通过回调报告结果。
-    await withMiniOperationLock('微信隐私保护指引', () => new Promise<void>((resolve, reject) => {
-      Taro.openPrivacyContract({ success: () => resolve(), fail: reject })
-    }))
-  }
-  catch { privacyError.value = '暂时无法打开微信隐私保护指引，请稍后再试。' }
-}
-
-function openSettings(device: boolean) {
-  void navigateMini(() => device ? Taro.switchTab({ url: '/pages/device/index' })
-    : Taro.navigateTo({ url: '/features/settings/range/index' }))
-    .catch(() => { error.value = '暂时无法打开训练设置，请重试。' })
+  try { await navigateMini(() => Taro.navigateTo({ url })) }
+  catch { error.value = '暂时无法打开该页面，请重试。' }
+  finally { navigating.value = false }
 }
 </script>
 
@@ -67,29 +36,51 @@ function openSettings(device: boolean) {
       <MiniPageHeader title="我的" />
     </view>
     <MiniTabScrollBody :fallback="fallbackPageScroll" :scroll-style="scrollStyle">
-        <view class="mini-card">
-          <text class="mini-card-title">训练设置</text>
-          <text class="mini-description">当前设备 {{ connectionSnapshot.binding?.name ?? '未绑定' }}</text>
-          <button :disabled="interactionsBlocked" @tap="openSettings(true)">设备管理</button>
-          <button :disabled="interactionsBlocked" @tap="openSettings(false)">个人活动范围</button>
-        </view>
-        <view class="mini-card">
-          <text class="mini-card-title">本地训练历史</text>
-          <text v-if="loading" class="mini-description">正在读取训练记录…</text>
-          <text v-else-if="error" class="mini-error">{{ error }}</text>
-          <text v-else-if="!groups.length" class="mini-description">暂无训练记录。</text>
-          <text v-else class="mini-description">共 {{ records.length }} 次训练</text>
-        </view>
-        <TrainingGameHistoryCard v-for="group in groups" :key="group.gameId" :group="group" selectable @select="openHistory" />
-        <MiniUpdateSettingsCard />
-        <!-- 按当前实际存储和请求范围说明数据用途。 -->
-        <view class="mini-card">
-          <text class="mini-card-title">数据与隐私</text>
-          <text class="mini-description">设备绑定、个人活动范围、训练成绩和动作回放保存在本机微信中。可在设备页忘记设备，或在历史详情删除成绩及回放。</text>
-          <text class="mini-description">启用在线目录时，只请求公开的设备型号和游戏目录。腕部姿态和训练记录仅用于本机训练与回放。</text>
-          <button :disabled="interactionsBlocked" @tap="openPrivacyGuide">查看微信隐私保护指引</button>
-          <text v-if="privacyError" class="mini-error">{{ privacyError }}</text>
-        </view>
+      <view class="mini-card mini-profile-links">
+        <button v-for="link in links" :key="link.url" class="mini-profile-link" :disabled="interactionsBlocked || navigating" @tap="open(link.url)">
+          <text class="mini-profile-icon" aria-hidden="true">{{ link.icon }}</text>
+          <view class="mini-profile-copy">
+            <text class="mini-card-title">{{ link.title }}</text>
+            <text class="mini-description">{{ link.detail }}</text>
+          </view>
+          <text class="mini-profile-chevron" aria-hidden="true">›</text>
+        </button>
+      </view>
+      <text v-if="error" class="mini-error">{{ error }}</text>
     </MiniTabScrollBody>
   </view>
 </template>
+
+<style>
+/* 原生按钮提供整行触区，长设备名可以随正文换行。 */
+.mini-profile-links { padding: 0 24px; }
+.mini-profile-links .mini-profile-link {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  width: 100%;
+  margin: 0;
+  min-height: 120px;
+  padding: 20px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  color: var(--c-ink);
+}
+.mini-profile-links .mini-profile-link + .mini-profile-link { border-top: 1px solid var(--c-line); }
+.mini-profile-icon {
+  display: flex;
+  flex: 0 0 66px;
+  align-items: center;
+  justify-content: center;
+  height: 66px;
+  border-radius: 20px;
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+  font-size: 34px;
+}
+.mini-profile-copy { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.mini-profile-copy .mini-description { margin-top: 4px; }
+.mini-profile-chevron { flex-shrink: 0; color: var(--c-ink-2); font-size: 44px; }
+</style>

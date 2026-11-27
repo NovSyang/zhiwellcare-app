@@ -3,6 +3,8 @@ import { UpdateInstallGuard } from '../../../../src/core/update/UpdateInstallGua
 const promptRoutes = new Set([
   'pages/device/index', 'pages/training/index', 'pages/courses/index',
   'pages/shop/index', 'pages/profile/index', 'features/training/result/index',
+  // 独立更新页沿用同一套前台可见性和业务锁。
+  'features/profile/update/index',
 ])
 
 /** 页面可见性、普通业务锁和应用更新独占门共用同一份状态。 */

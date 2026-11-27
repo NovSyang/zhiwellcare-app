@@ -289,6 +289,21 @@ describe('微信设备协调器', () => {
     await env.idle()
     expect(env.safety.getSnapshot().safe).toBe(true)
   })
+
+  it('真实校准完成后立即释放占用，后续再次确认中心仍能启动', async () => {
+    const env = setup()
+    env.show()
+    await vi.waitFor(() => expect(env.sensor.connect).toHaveBeenCalledOnce())
+    await env.idle()
+    env.coordinator.startCalibration()
+    env.emit('connected', false)
+    expect(env.coordinator.getSnapshot()).toMatchObject({ action: 'idle', calibrating: false })
+    expect(env.safety.getSnapshot().safe).toBe(true)
+    env.coordinator.startCalibration()
+    env.coordinator.invalidateCalibration()
+    expect(env.coordinator.getSnapshot()).toMatchObject({ action: 'idle', calibrating: false })
+    expect(env.safety.getSnapshot().safe).toBe(true)
+  })
 })
 
 describe('微信设备状态与电量', () => {

@@ -20,6 +20,8 @@ export * from './motion/MotionProfile'
 export * from './motion/MotionProcessor'
 export * from './motion/MotionProfileService'
 export * from './motion/RomCalibrationFlow'
+// 小程序步骤条与共享测量流程使用同一方向顺序。
+export { ROM_DIRECTION_ORDER, type RomDirection } from './motion/RomCalibrationState'
 export * from './training/Direction'
 export * from './training/TrainingSession'
 export * from './training/TrainingSessionState'
