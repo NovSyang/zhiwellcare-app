@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import Taro, { useLoad, useUnload } from '@tarojs/taro'
 import { getTrainingRepository } from '../../../app/MiniServices'
+import { navigateMini, useMiniPageLock } from '../../../app/MiniPageSafety'
 import { readImmersiveLayout } from '../../../platform/ImmersiveLayout'
 import { formatDuration } from '../../../utils/DateTimeFormatter'
 import { supportsReplay } from './ReplayCanvasFactory'
@@ -49,13 +50,14 @@ useUnload(() => {
   try { opener?.emit?.(REPLAY_RETURN, position) }
   catch { /* 详情页会在回到前台时读取临时进度。 */ }
 })
+useMiniPageLock('全屏回放')
 
 async function goBack() {
   player.pause()
   if (loaded) saveReplayReturn(ticket, player.getPosition())
   try {
-    if (Taro.getCurrentPages().length > 1) await Taro.navigateBack()
-    else await Taro.switchTab({ url: '/pages/profile/index' })
+    if (Taro.getCurrentPages().length > 1) await navigateMini(() => Taro.navigateBack())
+    else await navigateMini(() => Taro.switchTab({ url: '/pages/profile/index' }))
   } catch { error.value = '返回历史详情失败，请重试。' }
 }
 </script>

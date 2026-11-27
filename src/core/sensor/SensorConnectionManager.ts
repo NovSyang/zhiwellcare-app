@@ -52,6 +52,7 @@ export class SensorConnectionManager {
   private listeners = new Set<(snapshot: SensorConnectionSnapshot) => void>()
   private unsubscribe: (() => void) | null = null
   private workflowVersion = 0
+  private bindingWrites = Promise.resolve()
 
   constructor(
     private readonly sensor: SensorConnectionPort,
@@ -59,6 +60,8 @@ export class SensorConnectionManager {
     private readonly wait: WaitFunction = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
     // 微信可选用更严格的绑定策略，避免不同手机的广播名冒充唯一标识。
     private readonly matchDevice: MatchDevice = matchBoundDevice,
+    // 小程序用全局动作协调器接管掉线恢复，APP 继续使用原有默认入口。
+    private readonly recoverAfterDrop?: () => void,
   ) {}
 
   async initialize(): Promise<void> {
@@ -105,26 +108,33 @@ export class SensorConnectionManager {
 
   async disconnectManually(): Promise<void> {
     this.cancelCurrentWorkflow()
+    const workflowId = this.workflowVersion
     this.manualDisconnect = true
     try {
       await this.sensor.disconnect()
     } finally {
       this.manualDisconnect = false
-      this.finishIdle()
+      await this.bindingWrites
+      if (this.isWorkflowCurrent(workflowId)) this.finishIdle()
     }
   }
 
   /** 忘记设备同时断开 BLE，但不会影响 ROM、历史记录或回放。 */
   async forgetCurrentDevice(): Promise<void> {
     this.cancelCurrentWorkflow()
+    const workflowId = this.workflowVersion
     this.manualDisconnect = true
     try {
       await this.sensor.disconnect()
     } finally {
       this.manualDisconnect = false
     }
-    this.binding = null
-    await this.repository.clear()
+    await this.writeBinding(async () => {
+      if (!this.isWorkflowCurrent(workflowId)) return
+      await this.repository.clear()
+      this.binding = null
+    })
+    if (!this.isWorkflowCurrent(workflowId)) return
     this.sensor.resetCalibration()
     this.finishIdle()
   }
@@ -142,6 +152,7 @@ export class SensorConnectionManager {
       return
     }
     this.cancelCurrentWorkflow()
+    const workflowId = this.workflowVersion
     if (this.previousState === 'connected') {
       this.manualDisconnect = true
       try {
@@ -150,6 +161,7 @@ export class SensorConnectionManager {
         this.manualDisconnect = false
       }
     }
+    if (!this.isWorkflowCurrent(workflowId)) return
     this.sensor.resetCalibration()
     await this.runBoundDeviceWorkflow('manual-reconnect')
   }
@@ -162,26 +174,24 @@ export class SensorConnectionManager {
   }
 
   /** 选择新设备后才断开旧设备，失败时保留旧绑定并尝试恢复旧设备。 */
-  async switchDevice(device: SensorDevice): Promise<void> {
+  async switchDevice(device: SensorDevice, restorePrevious = true): Promise<void> {
     const oldBinding = this.binding ? { ...this.binding } : null
     const workflowId = this.beginWorkflow('switch-device')
-    if (this.previousState === 'connected') {
-      this.manualDisconnect = true
-      try {
-        await this.sensor.disconnect()
-      } finally {
-        this.manualDisconnect = false
-      }
-    }
-
     try {
+      if (this.previousState === 'connected') {
+        this.manualDisconnect = true
+        try {
+          await this.sensor.disconnect()
+        } finally {
+          this.manualDisconnect = false
+        }
+      }
+      if (!this.isWorkflowCurrent(workflowId)) return
       await this.connectAndSave(device, workflowId)
     } catch (error) {
       // 后台或主动断开已取消本次切换时，旧任务不得发起重连。
       if (!this.isWorkflowCurrent(workflowId)) throw error
-      this.binding = oldBinding
-      if (oldBinding) {
-        await this.repository.save(oldBinding)
+      if (oldBinding && restorePrevious) {
         await this.runBoundDeviceWorkflow('manual-reconnect')
       } else {
         this.finishWaitingUser('新设备连接失败，请重新选择训练设备。')
@@ -208,7 +218,7 @@ export class SensorConnectionManager {
       } catch (error) {
         // 权限和蓝牙开关不会通过短时间重试恢复，立即交给用户处理。
         if (isTerminalSensorTransportError(error)) {
-          this.finishWaitingUser(error.message)
+          if (this.isWorkflowCurrent(workflowId)) this.finishWaitingUser(error.message)
           throw error
         }
       }
@@ -227,7 +237,8 @@ export class SensorConnectionManager {
     this.previousState = state
     if (wasConnected && (state === 'disconnected' || state === 'error') && !this.manualDisconnect) {
       this.sensor.resetCalibration()
-      void this.reconnectAfterDrop()
+      if (this.recoverAfterDrop) this.recoverAfterDrop()
+      else void this.reconnectAfterDrop()
     }
     if (state === 'disconnected' && this.manualDisconnect) this.manualDisconnect = false
   }
@@ -252,6 +263,7 @@ export class SensorConnectionManager {
         await this.connectAndSave(device, workflowId)
         return
       } catch (error) {
+        if (!this.isWorkflowCurrent(workflowId)) return
         if (isTerminalSensorTransportError(error)) {
           this.finishWaitingUser(error.message)
           return
@@ -281,11 +293,27 @@ export class SensorConnectionManager {
     this.publish()
     await this.sensor.connect(device.id)
     if (!this.isWorkflowCurrent(workflowId)) return
-    this.binding = { deviceId: device.id, address: device.address, name: device.name, updatedAt: Date.now() }
-    await this.repository.save(this.binding)
+    const binding = { deviceId: device.id, address: device.address, name: device.name, updatedAt: Date.now() }
+    try {
+      await this.writeBinding(async () => {
+        if (!this.isWorkflowCurrent(workflowId)) return
+        await this.repository.save(binding)
+        this.binding = binding
+      })
+    } catch (error) {
+      if (this.isWorkflowCurrent(workflowId)) await this.sensor.disconnect().catch(() => undefined)
+      throw error
+    }
     if (!this.isWorkflowCurrent(workflowId)) return
     this.sensor.resetCalibration()
     this.finishIdle()
+  }
+
+  /** 存档串行完成，忘记或切换不会被已经发出的旧写入覆盖。 */
+  private writeBinding(operation: () => Promise<void>): Promise<void> {
+    const next = this.bindingWrites.then(operation)
+    this.bindingWrites = next.catch(() => undefined)
+    return next
   }
 
   private finishIdle(): void {

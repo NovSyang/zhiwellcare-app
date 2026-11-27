@@ -3,6 +3,7 @@ import { computed, ref, shallowRef } from 'vue'
 import Taro, { useDidShow, useLoad, useUnload } from '@tarojs/taro'
 import type { TrainingRecord } from '@/shared/core'
 import { getTrainingRepository } from '../../../app/MiniServices'
+import { navigateMini, withMiniOperationLock } from '../../../app/MiniPageSafety'
 import { presentSavedTraining } from '../../../app/TrainingRecordPresentation'
 import { formatDateTime, formatDuration } from '../../../utils/DateTimeFormatter'
 import { supportsReplay } from '../replay/ReplayCanvasFactory'
@@ -15,6 +16,7 @@ const record = shallowRef<TrainingRecord | null>(null)
 const loading = ref(true)
 const error = ref('')
 const expanding = ref(false)
+const removing = ref(false)
 const hasReplay = computed(() => supportsReplay(record.value))
 const details = computed(() => record.value ? presentSavedTraining(record.value) : null)
 const player = useTrainingReplayPlayer('#replay-canvas')
@@ -45,7 +47,8 @@ useLoad(async (options) => {
 
 /** 打开全屏前停止内嵌播放，返回事件只更新显示进度。 */
 async function expand() {
-  if (!record.value || !replayReady.value || expanding.value) return
+  const id = record.value?.id
+  if (!id || !replayReady.value || expanding.value || removing.value) return
   expanding.value = true
   player.pause()
   const { elapsed, trajectory } = player.getPosition()
@@ -54,8 +57,8 @@ async function expand() {
   returnTicket = ticket
   try {
     error.value = ''
-    await Taro.navigateTo({
-      url: `/features/history/replay/index?id=${encodeURIComponent(record.value.id)}&elapsed=${elapsed}&trajectory=${Number(trajectory)}&ticket=${ticket}`,
+    await navigateMini(() => Taro.navigateTo({
+      url: `/features/history/replay/index?id=${encodeURIComponent(id)}&elapsed=${elapsed}&trajectory=${Number(trajectory)}&ticket=${ticket}`,
       events: {
         [REPLAY_RETURN]: (position: ReplayPosition) => {
           if (!unloaded && ticket === returnTicket && position) {
@@ -64,7 +67,7 @@ async function expand() {
           }
         },
       },
-    })
+    }))
   } catch {
     discardReplayReturn(ticket)
     error.value = '暂时无法打开全屏回放，请重试。'
@@ -73,14 +76,19 @@ async function expand() {
 }
 
 async function removeRecord() {
-  if (!record.value) return
+  const id = record.value?.id
+  if (!id || removing.value || expanding.value) return
+  removing.value = true
   try {
-    const decision = await Taro.showModal({ title: '删除训练记录', content: '训练摘要与本地回放将一并删除。' })
-    if (!decision.confirm) return
-    player.pause()
-    await getTrainingRepository().delete(record.value.id)
-    await Taro.navigateBack()
+    await withMiniOperationLock('删除训练记录', async () => {
+      const decision = await Taro.showModal({ title: '删除训练记录', content: '训练摘要与本地回放将一并删除。' })
+      if (!decision.confirm || unloaded) return
+      player.pause()
+      await getTrainingRepository().delete(id)
+      if (!unloaded) await navigateMini(() => Taro.navigateBack())
+    })
   } catch (failure) { error.value = failure instanceof Error ? failure.message : '删除训练记录失败。' }
+  finally { removing.value = false }
 }
 </script>
 
@@ -100,7 +108,7 @@ async function removeRecord() {
       </view>
       <view v-if="hasReplay" class="mini-card">
         <text class="mini-card-title">训练回放</text>
-        <button v-if="replayReady" size="mini" :disabled="expanding" @tap="expand">展开全屏</button>
+        <button v-if="replayReady" size="mini" :disabled="expanding || removing" @tap="expand">展开全屏</button>
         <text v-if="replayError" class="mini-error">{{ replayError }}</text>
         <button v-if="replayError" size="mini" @tap="player.refresh">重试回放</button>
         <canvas id="replay-canvas" type="2d" class="mini-replay-canvas" />
@@ -115,7 +123,7 @@ async function removeRecord() {
           {{ item.label }} · {{ item.value }} {{ item.detail }}
         </text>
       </view>
-      <button class="mini-danger" @tap="removeRecord">删除此训练记录</button>
+      <button class="mini-danger" :disabled="removing || expanding" @tap="removeRecord">删除此训练记录</button>
     </template>
     <text v-else-if="!loading && !error" class="mini-description">这条训练记录已不存在。</text>
     <text v-if="error" class="mini-error">{{ error }}</text>

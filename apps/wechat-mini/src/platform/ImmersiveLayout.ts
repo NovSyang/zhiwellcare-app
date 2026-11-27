@@ -31,10 +31,15 @@ export function readImmersiveLayout() {
 let keepScreenTask = Promise.resolve()
 
 /** 串行开关常亮，避免退出时较早的开启请求覆盖关闭。 */
-export function setTrainingScreenOn(keepScreenOn: boolean): Promise<void> {
-  keepScreenTask = keepScreenTask.then(async () => {
+export function setTrainingScreenOn(keepScreenOn: boolean, requireSuccess = false): Promise<void> {
+  const task = keepScreenTask.then(async () => {
     try { await Taro.setKeepScreenOn({ keepScreenOn }) }
-    catch { console.warn('微信屏幕常亮设置暂不可用。') }
+    catch (failure) {
+      // 安装更新前需要确认关闭；普通训练操作仍可在旧微信环境继续。
+      if (requireSuccess) throw failure
+      console.warn('微信屏幕常亮设置暂不可用。')
+    }
   })
-  return keepScreenTask
+  keepScreenTask = task.catch(() => undefined)
+  return task
 }

@@ -6,3 +6,5 @@ declare module '*.jpg' {
 
 // 由 Taro 在编译时注入，缺省使用内置目录。
 declare const __MINI_CATALOG_BASE_URL__: string
+/** 构建期注入的小程序独立版本。 */
+declare const __MINI_BUILD_VERSION__: string

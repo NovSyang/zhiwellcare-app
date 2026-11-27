@@ -2,7 +2,8 @@
 import { ref, shallowRef, watch } from 'vue'
 import Taro, { useDidHide, useLoad, useUnload } from '@tarojs/taro'
 import { createDefaultMotionProfile, profileFromMeasuredRange, RomCalibrationFlow } from '@/shared/core'
-import { initializeMiniServices, motionProfileService, readyForTraining, sensorService } from '../../../app/MiniServices'
+import { deviceBusy, initializeMiniServices, motionProfileService, readyForTraining, sensorService } from '../../../app/MiniServices'
+import { useMiniPageLock, withMiniOperationLock } from '../../../app/MiniPageSafety'
 
 defineOptions({ name: 'ActivityRangePage' })
 const directionName = { left: '左', right: '右', forward: '前', backward: '后' }
@@ -24,10 +25,11 @@ useLoad(async () => {
 })
 useDidHide(stopCurrentAttempt)
 useUnload(stopCurrentAttempt)
+useMiniPageLock('个人活动范围')
 watch(readyForTraining, (ready) => { if (!ready) stopCurrentAttempt() })
 
 function begin() {
-  if (!readyForTraining.value || !flow.beginCountdown()) return
+  if (!readyForTraining.value || deviceBusy.value || !flow.beginCountdown()) return
   refresh()
   timer = setInterval(() => {
     if (flow.advanceCountdown(Date.now())) {
@@ -74,7 +76,7 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    await motionProfileService.save(profileFromMeasuredRange(range, profile.value))
+    await withMiniOperationLock('保存个人活动范围', () => motionProfileService.save(profileFromMeasuredRange(range, profile.value)))
     profile.value = motionProfileService.getCurrent()
     flow = new RomCalibrationFlow()
     refresh()
@@ -87,8 +89,10 @@ async function reset() {
   saving.value = true
   error.value = ''
   try {
-    const result = await Taro.showModal({ title: '恢复默认范围', content: '当前个人活动范围将恢复为默认配置。' })
-    if (result.confirm) profile.value = await motionProfileService.reset()
+    await withMiniOperationLock('恢复默认范围', async () => {
+      const result = await Taro.showModal({ title: '恢复默认范围', content: '当前个人活动范围将恢复为默认配置。' })
+      if (result.confirm) profile.value = await motionProfileService.reset()
+    })
   } catch (failure) { error.value = message(failure) }
   finally { saving.value = false }
 }

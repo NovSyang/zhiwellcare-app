@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { IDeviceBindingRepository, DeviceBinding } from '../src/core/sensor/DeviceBinding'
 import { SensorConnectionManager, type SensorConnectionPort } from '../src/core/sensor/SensorConnectionManager'
 import type { SensorConnectionState, SensorDevice } from '../src/core/sensor/SensorDevice'
@@ -100,6 +100,27 @@ describe('SensorConnectionManager', () => {
 
     expect(sensor.scanCount).toBe(1)
     expect(manager.getSnapshot()).toMatchObject({ reconnectState: 'waiting-user', message: '请允许附近设备权限。' })
+  })
+
+  it('旧扫描迟到的权限错误不会覆盖新的连接工作流', async () => {
+    const sensor = new FakeSensor()
+    let rejectOld!: (error: Error) => void
+    let resolveNew!: (devices: SensorDevice[]) => void
+    // 先开启新工作流，再让已取消的原生扫描返回终止错误。
+    vi.spyOn(sensor, 'scan')
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectOld = reject }))
+      .mockReturnValueOnce(new Promise((resolve) => { resolveNew = resolve }))
+    const manager = new SensorConnectionManager(sensor, new BindingRepository(boundDevice), async () => {})
+    await manager.initialize()
+    const old = manager.startupConnect()
+    manager.cancelCurrentWorkflow()
+    const latest = manager.startupConnect()
+    rejectOld(new SensorTransportError('permission-denied', '旧权限错误'))
+    await old
+    expect(manager.getSnapshot()).toMatchObject({ operation: 'startup', reconnectState: 'reconnecting' })
+    resolveNew([foundDevice])
+    await latest
+    expect(manager.getSnapshot().binding?.deviceId).toBe(foundDevice.id)
   })
 
   it('首次设置发现设备时同样采用有限扫描，并在发现后立即停止重试', async () => {

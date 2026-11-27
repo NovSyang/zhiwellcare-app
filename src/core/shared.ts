@@ -42,3 +42,5 @@ export * from './catalog/ICatalogSource'
 export * from './catalog/DeviceCatalogTypes'
 export * from './catalog/tagMatching'
 export * from './reporting/TrainingReport'
+// 小程序只共享安装安全锁，更新来源仍由各端独立实现。
+export * from './update/UpdateInstallGuard'

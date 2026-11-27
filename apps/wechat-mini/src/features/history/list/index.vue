@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef } from 'vue'
 import Taro, { useDidShow, useLoad, useUnload } from '@tarojs/taro'
+import { navigateMini } from '../../../app/MiniPageSafety'
 import { buildTrainingHistoryGroups, type TrainingHistoryGroup } from '@/shared/core'
 import { getTrainingRepository } from '../../../app/MiniServices'
 import TrainingGameHistoryCard from '../../../components/history/TrainingGameHistoryCard.vue'
@@ -45,7 +46,7 @@ async function refresh() {
 }
 
 async function openRecord(id: string) {
-  try { await Taro.navigateTo({ url: `/features/history/detail/index?id=${encodeURIComponent(id)}` }) }
+  try { await navigateMini(() => Taro.navigateTo({ url: `/features/history/detail/index?id=${encodeURIComponent(id)}` })) }
   catch { error.value = '无法打开训练详情，请重试。' }
 }
 </script>

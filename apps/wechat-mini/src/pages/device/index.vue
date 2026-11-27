@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useDidHide, useUnload } from '@tarojs/taro'
 import type { SensorConnectionState, SensorDevice } from '@/shared/core'
 import {
-  connectionManager, connectionSnapshot, foreground, initializeMiniServices, lifecycleError,
+  connectionSnapshot, deviceBusy, deviceState, foreground, interactionsBlocked, miniDeviceCoordinator,
   readyForTraining, reconnectTrainingDevice, scanTrainingDevices, selectTrainingDevice,
-  sensorService, sensorSnapshot,
+  sensorSnapshot, startTrainingCalibration, cancelTrainingCalibration, disconnectTrainingDevice, confirmForgetTrainingDevice,
 } from '../../app/MiniServices'
+import { useMiniTabPage } from '../../app/MiniPageSafety'
+import MiniPageHeader from '../../components/app/MiniPageHeader.vue'
 
 defineOptions({ name: 'DevicePage' })
+const viewport = useMiniTabPage('pages/device/index')
 
 const labels: Record<SensorConnectionState, string> = {
   idle: '未连接', scanning: '正在扫描', connecting: '正在连接', discovering: '正在发现服务',
@@ -20,69 +24,88 @@ const error = ref('')
 const scanned = ref(false)
 const binding = computed(() => connectionSnapshot.value.binding)
 const state = computed(() => sensorSnapshot.value?.state ?? 'idle')
-const calibration = computed(() => sensorService.motion.getCalibrationSnapshot(sensorSnapshot.value?.frame?.timestamp))
-const disabled = computed(() => busy.value || !foreground.value || connectionSnapshot.value.operation !== 'idle')
+const disabled = computed(() => busy.value || interactionsBlocked.value || deviceBusy.value || deviceState.value.calibrating)
+const owner = Symbol('设备页连接')
+let revision = 0
 
-// 同一设备动作结束后才开放后续操作，错误在原页面可见、可重试。
-async function run(action: () => Promise<void>) {
-  if (disabled.value) return
+// Tab 隐藏后丢弃旧扫描结果，并取消尚未提交的设备选择。
+function leave() {
+  revision += 1
+  busy.value = false
+  candidates.value = []
+  scanned.value = false
+  miniDeviceCoordinator.cancelSelection(owner)
+}
+useDidHide(leave)
+useUnload(leave)
+watch(foreground, (visible) => { if (!visible) leave() }, { flush: 'sync' })
+
+async function run(action: (current: () => boolean) => unknown, canInterrupt = false) {
+  if (canInterrupt ? interactionsBlocked.value : disabled.value) return
+  const request = ++revision
+  const current = () => request === revision
   busy.value = true
   error.value = ''
-  lifecycleError.value = null
-  try { await action() } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : '操作失败，请重试。'
-  } finally { busy.value = false }
+  try { await action(current) } catch (failure) {
+    if (current()) error.value = failure instanceof Error ? failure.message : '操作失败，请重试。'
+  } finally { if (current()) busy.value = false }
 }
 
 function scan() {
-  void run(async () => {
+  void run(async (current) => {
     scanned.value = false
-    candidates.value = await scanTrainingDevices()
+    const list = await scanTrainingDevices()
+    if (!current()) return
+    candidates.value = list
     scanned.value = true
   })
 }
 
 function connect(device: SensorDevice) {
-  void run(async () => {
-    await selectTrainingDevice(device)
+  void run(async (current) => {
+    await selectTrainingDevice(device, owner)
+    if (!current()) return
     candidates.value = []
     scanned.value = false
   })
 }
 
-void initializeMiniServices().catch((failure: unknown) => {
-  error.value = failure instanceof Error ? failure.message : '加载本地设备设置失败。'
-})
 </script>
 
 <template>
-  <view class="mini-page">
-    <text class="mini-hero">设备</text>
-    <view class="mini-card">
-      <text class="mini-card-title">{{ binding?.name ?? '腕部训练设备' }}</text>
-      <text class="mini-description">{{ readyForTraining ? '已完成中心校准，可开始训练' : labels[state] }}</text>
-      <text v-if="state === 'connected'" class="mini-description">
-        数据 {{ sensorSnapshot?.rateHz ?? 0 }} Hz · 电量 {{ sensorSnapshot?.battery.percent == null ? '读取中' : sensorSnapshot.battery.percent + '%' }}
-      </text>
-      <text v-if="connectionSnapshot.message" class="mini-description">{{ connectionSnapshot.message }}</text>
-      <text v-if="error || lifecycleError" class="mini-error">{{ error || lifecycleError }}</text>
-      <button v-if="state === 'connected'" class="mini-primary" :disabled="disabled || calibration.active" @tap="sensorService.startCalibration()">
-        {{ calibration.active ? '正在校准，请保持静止' : readyForTraining ? '重新校准中心' : '校准中心' }}
-      </button>
-      <text v-if="state === 'connected'" class="mini-description">校准时将设备放在自然中心位置并保持静止。</text>
-      <button v-if="binding && state !== 'connected'" :disabled="disabled" @tap="run(reconnectTrainingDevice)">重连已绑定设备</button>
-      <button v-if="state === 'connected'" :disabled="disabled" @tap="run(() => connectionManager.disconnectManually())">断开设备</button>
-      <button v-if="binding" :disabled="disabled" @tap="run(() => connectionManager.forgetCurrentDevice())">忘记设备</button>
-    </view>
+  <view class="mini-tab-page" :style="viewport">
+    <MiniPageHeader title="设备" device-page />
+    <scroll-view scroll-y class="mini-tab-scroll">
+      <view class="mini-page mini-tab-content">
+        <view class="mini-card">
+          <text class="mini-card-title">{{ binding?.name ?? '腕部训练设备' }}</text>
+          <text class="mini-description">{{ readyForTraining ? '已完成中心校准，可开始训练' : labels[state] }}</text>
+          <text v-if="state === 'connected'" class="mini-description">
+            数据 {{ sensorSnapshot?.rateHz ?? 0 }} Hz · 电量 {{ sensorSnapshot?.battery.percent == null ? '读取中' : sensorSnapshot.battery.percent + '%' }}
+          </text>
+          <text v-if="connectionSnapshot.message" class="mini-description">{{ connectionSnapshot.message }}</text>
+          <text v-if="error || deviceState.error" class="mini-error">{{ error || deviceState.error }}</text>
+          <text v-if="deviceState.policyNeedsRepair" class="mini-description">请手动连接设备以恢复自动重连设置。</text>
+          <button v-if="state === 'connected'" class="mini-primary" :disabled="disabled" @tap="run(startTrainingCalibration)">
+            {{ deviceState.calibrating ? '正在校准，请保持静止' : readyForTraining ? '重新校准中心' : '校准中心' }}
+          </button>
+          <button v-if="deviceState.calibrating" :disabled="interactionsBlocked" @tap="run(cancelTrainingCalibration, true)">取消校准</button>
+          <text v-if="state === 'connected'" class="mini-description">校准时将设备放在自然中心位置并保持静止。</text>
+          <button v-if="binding && state !== 'connected'" :disabled="disabled" @tap="run(() => reconnectTrainingDevice())">重连已绑定设备</button>
+          <button v-if="state === 'connected' || (binding && deviceBusy)" :disabled="interactionsBlocked || deviceState.action === 'disconnecting' || deviceState.action === 'forgetting'" @tap="run(disconnectTrainingDevice, true)">断开设备</button>
+          <button v-if="binding" :disabled="disabled" @tap="run(confirmForgetTrainingDevice)">忘记设备</button>
+        </view>
 
-    <view class="mini-card">
-      <text class="mini-card-title">查找设备</text>
-      <text class="mini-description">扫描附近的 BS-BT91，通过蓝牙接收腕部姿态用于训练和校准。</text>
-      <button class="mini-primary" :disabled="disabled" @tap="scan">{{ state === 'connected' ? '查找其他设备' : '扫描蓝牙设备' }}</button>
-      <text v-if="scanned && !candidates.length" class="mini-description">暂未发现训练设备。请确认设备已开机并靠近手机。</text>
-      <button v-for="device in candidates" :key="device.id" :disabled="disabled" @tap="connect(device)">
-        {{ device.name }} · {{ device.id.slice(-8) }}
-      </button>
-    </view>
+        <view class="mini-card">
+          <text class="mini-card-title">查找设备</text>
+          <text class="mini-description">扫描附近的 BS-BT91，通过蓝牙接收腕部姿态用于训练和校准。</text>
+          <button class="mini-primary" :disabled="disabled" @tap="scan">{{ state === 'connected' ? '查找其他设备' : '扫描蓝牙设备' }}</button>
+          <text v-if="scanned && !candidates.length" class="mini-description">暂未发现训练设备。请确认设备已开机并靠近手机。</text>
+          <button v-for="device in candidates" :key="device.id" :disabled="disabled" @tap="connect(device)">
+            {{ device.name }} · {{ device.id.slice(-8) }}
+          </button>
+        </view>
+      </view>
+    </scroll-view>
   </view>
 </template>

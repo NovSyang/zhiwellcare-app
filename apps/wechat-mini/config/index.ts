@@ -1,4 +1,5 @@
 import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 import { defineConfig } from '@tarojs/cli'
 
 const sharedCore = resolve(__dirname, '../../../src/core')
@@ -7,6 +8,9 @@ const sharedTargetReach = resolve(__dirname, '../../../src/games/target-reach')
 const sharedTrajectory = resolve(__dirname, '../../../src/games/trajectory-follow')
 const sharedRiver = resolve(__dirname, '../../../src/games/river-drift')
 const sharedKart = resolve(__dirname, '../../../src/games/kart-racing')
+// 小程序版本只读取自己的清单，独立于 APP 发布版本。
+const { version } = JSON.parse(readFileSync(resolve(__dirname, '../package.json'), 'utf8')) as { version?: string }
+if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/.test(version)) throw new Error('小程序版本需要三个数字段。')
 
 export default defineConfig({
   projectName: 'zhiwellcare-wechat-mini',
@@ -17,6 +21,7 @@ export default defineConfig({
   compiler: 'webpack5',
   // 始终替换为字面量，微信运行时没有 Node 的 process 对象。
   defineConstants: {
+    __MINI_BUILD_VERSION__: JSON.stringify(version),
     __MINI_CATALOG_BASE_URL__: JSON.stringify(process.env.TARO_APP_API_BASE ?? ''),
   },
   // 复用 APP 原图，输出稳定的微信包根路径。

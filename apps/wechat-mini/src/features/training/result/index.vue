@@ -3,6 +3,7 @@ import { computed, ref, shallowRef } from 'vue'
 import Taro, { useLoad, useUnload } from '@tarojs/taro'
 import type { TrainingRecord } from '@/shared/core'
 import { getTrainingRepository } from '../../../app/MiniServices'
+import { navigateMini, useMiniSafePage } from '../../../app/MiniPageSafety'
 import { presentSavedTraining } from '../../../app/TrainingRecordPresentation'
 import { formatDateTime, formatDuration } from '../../../utils/DateTimeFormatter'
 
@@ -13,6 +14,7 @@ const details = computed(() => record.value ? presentSavedTraining(record.value)
 const loading = ref(true)
 const error = ref('')
 const navigationError = ref('')
+useMiniSafePage('features/training/result/index', computed(() => !loading.value && Boolean(record.value)))
 let unloaded = false
 useUnload(() => { unloaded = true })
 
@@ -32,15 +34,16 @@ useLoad(async (options) => {
 })
 
 async function openReplay() {
-  if (!record.value) return
+  const id = record.value?.id
+  if (!id) return
   navigationError.value = ''
   try {
-    await Taro.navigateTo({ url: `/features/history/detail/index?id=${encodeURIComponent(record.value.id)}` })
+    await navigateMini(() => Taro.navigateTo({ url: `/features/history/detail/index?id=${encodeURIComponent(id)}` }))
   } catch { navigationError.value = '暂时无法打开训练回放，请重试。' }
 }
 
 async function backToTraining() {
-  try { await Taro.switchTab({ url: '/pages/training/index' }) }
+  try { await navigateMini(() => Taro.switchTab({ url: '/pages/training/index' })) }
   catch { navigationError.value = '暂时无法返回训练大厅，请重试。' }
 }
 </script>

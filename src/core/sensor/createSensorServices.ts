@@ -12,6 +12,7 @@ export function createSensorServices(
   transport: ISensorTransport,
   storage: IKeyValueStore,
   matchDevice?: (binding: DeviceBinding, devices: SensorDevice[]) => SensorDevice | null,
+  recoverAfterDrop?: () => void,
 ) {
   const sensorService = new SensorService(transport)
   const connectionManager = new SensorConnectionManager(
@@ -19,6 +20,7 @@ export function createSensorServices(
     new LocalStorageDeviceBindingRepository(storage),
     undefined,
     matchDevice,
+    recoverAfterDrop,
   )
   const motionProfileService = new MotionProfileService(
     new LocalStorageMotionProfileRepository(storage),

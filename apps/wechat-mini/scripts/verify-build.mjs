@@ -10,11 +10,28 @@ const project = JSON.parse(readFileSync(join(output, 'project.config.json'), 'ut
 const packages = app.subPackages ?? []
 const routes = [...app.pages, ...packages.flatMap(({ root, pages }) => pages.map((page) => `${root}/${page}`))]
 const common = readFileSync(join(output, 'common.js'), 'utf8')
+const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+const lockfile = JSON.parse(readFileSync(new URL('../package-lock.json', import.meta.url), 'utf8'))
 
 // 确保开发者工具能把构建目录直接作为小程序项目加载。
 assert.equal(project.miniprogramRoot, './')
 assert.equal(project.compileType, 'miniprogram')
 assert.deepEqual(app.tabBar.list.map(({ text }) => text), ['设备', '训练', '课程', '商城', '我的'])
+assert.equal(routes.length, 13)
+assert.equal(packages.length, 4)
+
+// 版本来自小程序独立清单，锁文件与实际注入的构建号保持一致。
+assert.match(manifest.version, /^\d+\.\d+\.\d+$/)
+assert.equal(lockfile.version, manifest.version)
+assert.equal(lockfile.packages[''].version, manifest.version)
+assert.ok(common.includes(JSON.stringify(manifest.version)), '小程序构建号未进入主包')
+assert.ok(common.includes('mini-page-header'), '主包缺少通用页头组件')
+for (const { pagePath } of app.tabBar.list) {
+  const source = readFileSync(new URL(`../src/${pagePath}.vue`, import.meta.url), 'utf8')
+  assert.match(source, /import MiniPageHeader from ['"][^'"]*\/MiniPageHeader\.vue['"]/, pagePath)
+  assert.match(source, /<MiniPageHeader\b/, pagePath)
+  assert.ok(readFileSync(join(output, `${pagePath}.js`), 'utf8').includes('mini-tab-scroll'), `${pagePath} 缺少独立内容滚动区`)
+}
 // 原生 Tab 的两态图标都必须来自构建包，且保持制作时的像素尺寸。
 const tabIcons = app.tabBar.list.flatMap(({ iconPath, selectedIconPath }) => [iconPath, selectedIconPath])
 assert.equal(new Set(tabIcons).size, 10)
@@ -87,6 +104,6 @@ for (const file of readdirSync(output, { recursive: true, withFileTypes: true })
   sizes.set(group, sizes.get(group) + statSync(absolute).size)
 }
 
-console.log(`已验证 ${app.tabBar.list.length} 个 Tab、${tabIcons.length} 个两态图标、${routes.length} 个页面和 ${packages.length} 个分包。`)
+console.log(`已验证构建版本 V${manifest.version}、${app.tabBar.list.length} 个 Tab 的共用页头、${tabIcons.length} 个两态图标、${routes.length} 个页面和 ${packages.length} 个分包。`)
 for (const [name, bytes] of sizes) console.log(`${name}  ${(bytes / 1024).toFixed(1)} KiB`)
 console.log(`总计  ${([...sizes.values()].reduce((total, size) => total + size, 0) / 1024).toFixed(1)} KiB`)

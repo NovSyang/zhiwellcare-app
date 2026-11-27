@@ -4,9 +4,12 @@ import Taro, { useDidHide, useDidShow, useLoad, useReady, useUnload } from '@tar
 import type { GameHudMetric, GameInput, TrainingRecord, TrainingSessionState } from '@/shared/core'
 import { TARGET_REACH_GAME_ID } from '@/shared/target-config'
 import {
-  connectionSnapshot, foreground, getTrainingRepository, motionProfileService, readyForTraining,
-  reconnectTrainingDevice, sensorService, sensorSnapshot,
+  cancelTrainingCalibration, connectionSnapshot, deviceBusy, deviceState, foreground, getTrainingRepository,
+  interactionsBlocked, invalidateTrainingCalibration, motionProfileService, readyForTraining,
+  reconnectTrainingDevice, sensorService, sensorSnapshot, startTrainingCalibration,
 } from '../../../app/MiniServices'
+import { navigateMini, useMiniPageLock, withMiniOperationLock } from '../../../app/MiniPageSafety'
+import MiniCompactDeviceStatus from '../../../components/app/MiniCompactDeviceStatus.vue'
 import { isMiniTrainingGameId, miniTrainingGames, type MiniTrainingGameId } from '../../../app/TrainingGames'
 import { getTrainingOffers } from '../../../app/TrainingOffers'
 import { createTrainingClock } from '../../../platform/TrainingClock'
@@ -36,10 +39,7 @@ const finished = shallowRef<TrainingRecord | null>(null)
 const openingResult = ref(false)
 const resultError = ref('')
 const connected = computed(() => sensorSnapshot.value?.state === 'connected')
-const calibrating = computed(() => {
-  const current = sensorSnapshot.value
-  return current?.state === 'connected' && sensorService.motion.getCalibrationSnapshot().active
-})
+const calibrating = computed(() => deviceState.value.calibrating)
 const pauseText: Record<TrainingPauseReason, string> = {
   manual: '可在准备好后继续训练。',
   background: '回到前台后请确认连接，并重新校准中心。',
@@ -86,13 +86,14 @@ useDidHide(() => { pageVisible = false; applyVisibility() })
 useUnload(() => {
   disposed = true
   canvasRevision += 1
-  void setTrainingScreenOn(false)
   stopLoops()
   training?.run.abort()
   unsubscribe?.()
   Taro.offWindowResize?.(resize)
   Taro.disableAlertBeforeUnload?.()
 })
+// 先停止判定和绘制，再等待常亮关闭，最后允许更新。
+useMiniPageLock('横屏训练', () => setTrainingScreenOn(false))
 watch(foreground, applyVisibility, { flush: 'sync' })
 
 /** 小程序进后台时立即暂停，停掉绘制和判定，并清掉旧中心。 */
@@ -104,7 +105,7 @@ function applyVisibility() {
   if (!active) {
     canvasRevision += 1
     stopLoops()
-    if (training && !finished.value) sensorService.resetCalibration()
+    if (training && !finished.value) invalidateTrainingCalibration()
     void setTrainingScreenOn(false)
   } else {
     if (training && !finished.value) void setTrainingScreenOn(true)
@@ -211,12 +212,12 @@ function stopPainting() {
 async function begin() {
   const binding = connectionSnapshot.value.binding
   const id = gameId.value
-  if (busy.value || !active || !surface || !id || !binding || !readyForTraining.value) return
+  if (busy.value || !active || !surface || !id || !binding || !readyForTraining.value || deviceBusy.value || interactionsBlocked.value) return
   busy.value = true
   error.value = ''
   try {
     const offers = await getTrainingOffers({ id: binding.deviceId, name: binding.name, address: binding.address })
-    if (disposed || !active || !surface) return
+    if (disposed || !active || !surface || !readyForTraining.value || deviceBusy.value || interactionsBlocked.value) return
     const offer = offers.find(({ game }) => game.gameId === id)
     if (!offer?.device || binding.deviceId !== connectionSnapshot.value.binding?.deviceId || !latestInput) {
       throw new Error('当前设备未匹配此训练，请检查连接。')
@@ -240,19 +241,27 @@ function pause() { training?.run.pause(); syncRun() }
 
 function resume() {
   error.value = ''
-  if (!active || !canvasReady.value) return
+  if (!active || !canvasReady.value || !canResume.value || deviceBusy.value || interactionsBlocked.value) return
   try { training?.run.resume(); syncRun() } catch (failure) {
     error.value = errorText(failure, '暂时无法继续训练。')
   }
 }
 
 async function reconnect() {
-  if (busy.value || !active) return
+  if (busy.value || !active || deviceBusy.value || interactionsBlocked.value) return
   busy.value = true
   error.value = ''
-  try { await reconnectTrainingDevice() } catch (failure) {
+  try { await reconnectTrainingDevice(originalDeviceId ?? undefined) } catch (failure) {
     error.value = errorText(failure, '重连失败，请检查训练设备。')
   } finally { busy.value = false }
+}
+
+// 恢复同一台设备后重新校准，训练仍由用户手动继续。
+function calibrate() {
+  error.value = ''
+  try { startTrainingCalibration() } catch (failure) {
+    error.value = errorText(failure, '无法开始中心校准，请重试。')
+  }
 }
 
 async function saveRecord() {
@@ -261,7 +270,7 @@ async function saveRecord() {
   saving.value = true
   saveError.value = ''
   try {
-    await getTrainingRepository().save(record)
+    await withMiniOperationLock('保存训练及回放', () => getTrainingRepository().save(record))
     saved.value = true
   } catch (failure) { saveError.value = errorText(failure, '本次训练保存失败，请重试。') }
   finally { saving.value = false }
@@ -277,8 +286,8 @@ async function exitTraining() {
       if (!decision.confirm) return
     }
     await clearExitAlert()
-    if (Taro.getCurrentPages().length > 1) await Taro.navigateBack()
-    else await Taro.switchTab({ url: '/pages/training/index' })
+    if (Taro.getCurrentPages().length > 1) await navigateMini(() => Taro.navigateBack())
+    else await navigateMini(() => Taro.switchTab({ url: '/pages/training/index' }))
   } catch (failure) {
     if (training && !saved.value) Taro.enableAlertBeforeUnload?.({ message: '本次训练尚未保存，退出会结束当前训练。' })
     error.value = errorText(failure, '退出训练失败，请重试。')
@@ -296,7 +305,7 @@ async function openResult() {
     if (!active || disposed) return
     await clearExitAlert()
     if (!active || disposed) return
-    await Taro.redirectTo({ url: `/features/training/result/index?id=${encodeURIComponent(record.id)}` })
+    await navigateMini(() => Taro.redirectTo({ url: `/features/training/result/index?id=${encodeURIComponent(record.id)}` }))
   } catch {
     if (!disposed) resultError.value = '训练已保存，暂时无法打开结果页。'
   } finally { openingResult.value = false }
@@ -318,7 +327,7 @@ function errorText(failure: unknown, fallback: string) { return failure instance
     <view v-if="game && !finished && (state === 'playing' || state === 'countdown')" class="immersive-toolbar">
       <view class="immersive-row">
         <text class="immersive-chip">有效 {{ formatDuration(elapsed) }}</text>
-        <text class="immersive-chip">{{ connected ? '设备已连接' : '设备已断开' }}</text>
+        <MiniCompactDeviceStatus />
         <text v-for="metric in metrics" :key="metric.label" class="immersive-chip">{{ metric.label }} {{ metric.value }}</text>
       </view>
       <view class="immersive-row">
@@ -345,18 +354,20 @@ function errorText(failure: unknown, fallback: string) { return failure instance
           <template v-else>
             <text v-if="state === 'idle'" class="immersive-note">{{ game.instructions }}</text>
             <text v-else-if="state === 'paused'" class="immersive-note">{{ reason ? pauseText[reason] : '训练已暂停。' }}</text>
-            <text class="immersive-note">{{ connected ? readyForTraining ? '设备已连接，中心已校准' : '设备已连接，需校准中心' : connectionSnapshot.message || '设备未连接' }}</text>
+            <view class="immersive-row"><MiniCompactDeviceStatus /></view>
+            <text v-if="!readyForTraining && connectionSnapshot.message" class="immersive-note">{{ connectionSnapshot.message }}</text>
           </template>
           <text v-if="error" class="immersive-note immersive-error">{{ error }}</text>
           <view class="immersive-row">
             <template v-if="game">
-              <button v-if="state === 'idle'" size="mini" class="immersive-button immersive-primary" :disabled="busy || !canvasReady || !readyForTraining" @tap="begin">开始训练</button>
-              <button v-else-if="state === 'paused'" size="mini" class="immersive-button immersive-primary" :disabled="!canvasReady || !canResume" @tap="resume">继续训练</button>
+              <button v-if="state === 'idle'" size="mini" class="immersive-button immersive-primary" :disabled="busy || !canvasReady || !readyForTraining || deviceBusy || interactionsBlocked" @tap="begin">开始训练</button>
+              <button v-else-if="state === 'paused'" size="mini" class="immersive-button immersive-primary" :disabled="!canvasReady || !canResume || deviceBusy || interactionsBlocked" @tap="resume">继续训练</button>
               <button v-if="!canvasReady && error" size="mini" class="immersive-button" @tap="mountCanvas">重试画布</button>
-              <button v-if="!connected && connectionSnapshot.binding" size="mini" class="immersive-button" :disabled="busy" @tap="reconnect">重连设备</button>
-              <button v-else-if="connected && !readyForTraining" size="mini" class="immersive-button" :disabled="calibrating || busy" @tap="sensorService.startCalibration()">
+              <button v-if="!connected && connectionSnapshot.binding" size="mini" class="immersive-button" :disabled="busy || deviceBusy || interactionsBlocked" @tap="reconnect">重连设备</button>
+              <button v-else-if="connected && !readyForTraining" size="mini" class="immersive-button" :disabled="deviceBusy || busy || interactionsBlocked" @tap="calibrate">
                 {{ calibrating ? '正在校准' : '校准中心' }}
               </button>
+              <button v-if="calibrating" size="mini" class="immersive-button" :disabled="interactionsBlocked" @tap="cancelTrainingCalibration">取消校准</button>
             </template>
             <button size="mini" class="immersive-button" @tap="exitTraining">{{ state === 'idle' ? '返回训练大厅' : '结束并离开' }}</button>
           </view>

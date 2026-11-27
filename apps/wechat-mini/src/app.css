@@ -31,8 +31,7 @@ page {
     var(--c-bg-2);
 }
 
-.mini-heading,
-.mini-hero {
+.mini-heading {
   display: block;
   font-size: 46px;
   font-weight: 700;
@@ -40,13 +39,82 @@ page {
   margin-bottom: 28px;
 }
 
-/* 五个主入口沿用 APP 的蓝青渐变页头。 */
-.mini-hero {
-  margin: -28px -32px 28px;
-  padding: 43px 32px 38px;
+/* 仅 Tab 内容滚动，页头保持在原生导航和 Tab 栏之间。 */
+.mini-tab-page { height: 100vh; display: flex; flex-direction: column; }
+.mini-tab-scroll { height: 0; flex: 1; min-height: 0; }
+.mini-tab-content { min-height: 0; }
+.mini-page-header {
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 28px 32px;
   background: var(--grad-hero);
   color: #fff;
 }
+.mini-page-title { font-size: 46px; font-weight: 700; white-space: nowrap; }
+.mini-device-status { min-width: 0; }
+.mini-device-trigger {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44PX;
+  padding: 0 18px;
+  margin: 0;
+  border-radius: 22px;
+  background: #063775;
+  color: #fff;
+  font-size: 25px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.mini-device-trigger[disabled] { background: #174c83; color: #fff; }
+.mini-device-trigger::after, .mini-menu-button::after { border: 0; }
+.mini-device-dot { width: 8PX; height: 8PX; flex: 0 0 8PX; border-radius: 50%; background: #b9c7db; }
+.mini-device-online { background: #69f0aa; }
+.mini-device-pending { background: #ffd078; }
+.mini-device-menu-mask, .mini-device-dialog-mask { position: fixed; inset: 0; }
+.mini-device-menu-mask { z-index: 1; }
+.mini-device-menu, .mini-device-dialog {
+  box-sizing: border-box;
+  background: var(--c-bg);
+  color: var(--c-ink);
+  border: 1px solid var(--c-line);
+  border-radius: 24px;
+  padding: 24px;
+  box-shadow: 0 8px 26px rgba(4, 33, 80, 0.23);
+}
+.mini-device-menu { position: absolute; z-index: 3; top: 100%; right: 24px; width: 490px; max-width: calc(100% - 48px); }
+.mini-device-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-device-dialog-mask {
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(11, 24, 46, 0.5);
+}
+.mini-device-dialog { width: 100%; max-width: 640px; }
+.mini-device-candidates { height: 240px; }
+.mini-menu-button {
+  box-sizing: border-box;
+  display: block;
+  margin-top: 14px;
+  min-height: 44PX;
+  padding: 17px 14px;
+  border-radius: 16px;
+  background: var(--c-bg-3);
+  color: var(--c-primary);
+  font-size: 27px;
+  line-height: 1.35;
+}
+.mini-menu-danger { background: var(--c-danger-soft); color: #a12d39; }
+.mini-menu-button[disabled] { color: var(--c-ink-2); background: var(--c-bg-2); }
 
 .mini-card {
   background: var(--c-bg);

@@ -4,6 +4,7 @@ import { useLoad } from '@tarojs/taro'
 import { courses } from '@/shared/courses'
 import { courseDayKey } from '@/shared/core'
 import { courseCheckins } from '../../../app/MiniServices'
+import { withMiniOperationLock } from '../../../app/MiniPageSafety'
 import { formatDateKey } from '../../../utils/DateTimeFormatter'
 
 defineOptions({ name: 'CourseDetailPage' })
@@ -31,7 +32,7 @@ async function complete() {
   error.value = ''
   try {
     const now = new Date()
-    dates.value = await courseCheckins.complete(id.value, now)
+    dates.value = await withMiniOperationLock('保存课程打卡', () => courseCheckins.complete(id.value, now))
     today.value = courseDayKey(now)
   } catch (failure) {
     error.value = failure instanceof Error ? failure.message : '保存打卡失败，请重试。'

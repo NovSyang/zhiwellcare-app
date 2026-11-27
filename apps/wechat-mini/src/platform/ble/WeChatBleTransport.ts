@@ -318,9 +318,10 @@ export class WeChatBleTransport implements ISensorTransport {
 
   private async closeAdapter(): Promise<void> {
     if (!this.opened) return
+    // 关闭失败时保留打开状态，让下一次清理能继续重试。
+    await this.api.closeBluetoothAdapter()
     this.opened = false
     this.api.offBluetoothAdapterStateChange(this.handleAdapterState)
-    await this.api.closeBluetoothAdapter()
   }
 
   private async closeDevice(deviceId: string): Promise<void> {

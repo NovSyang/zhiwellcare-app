@@ -65,6 +65,17 @@ describe('微信 BLE 传输', () => {
     await transport.dispose()
   })
 
+  it('适配器首次关闭失败后仍能重新清理，成功后解绑监听', async () => {
+    const { api, transport } = fixture()
+    await transport.connect('one')
+    api.closeBluetoothAdapter.mockRejectedValueOnce(new Error('关闭失败'))
+    await expect(transport.suspend()).rejects.toThrow('关闭失败')
+    expect(api.offBluetoothAdapterStateChange).not.toHaveBeenCalled()
+    await transport.suspend()
+    expect(api.closeBluetoothAdapter).toHaveBeenCalledTimes(2)
+    expect(api.offBluetoothAdapterStateChange).toHaveBeenCalledOnce()
+  })
+
   it('订阅后只发布匹配的字节流，复制原生缓冲区并忽略上条连接的回调', async () => {
     const { api, transport, event } = fixture()
     const listener = vi.fn()
