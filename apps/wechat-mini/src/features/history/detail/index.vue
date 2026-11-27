@@ -1,121 +1,84 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, shallowRef } from 'vue'
-import Taro, { useDidHide, useReady, useLoad, useUnload } from '@tarojs/taro'
+import { computed, ref, shallowRef } from 'vue'
+import Taro, { useDidShow, useLoad, useUnload } from '@tarojs/taro'
 import type { TrainingRecord } from '@/shared/core'
-import { TARGET_REACH_GAME_ID } from '@/shared/target-config'
-import { TRAJECTORY_FOLLOW_GAME_ID } from '@/shared/trajectory'
-import { RIVER_DRIFT_GAME_ID } from '@/shared/river'
-import { KART_RACING_GAME_ID } from '@/shared/kart'
 import { getTrainingRepository } from '../../../app/MiniServices'
-import { isMiniTrainingGameId } from '../../../app/TrainingGames'
 import { presentSavedTraining } from '../../../app/TrainingRecordPresentation'
-import { queryCanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
-import { TargetReachReplayCanvas } from './TargetReachReplayCanvas'
-import { TrajectoryFollowReplayCanvas } from './TrajectoryFollowReplayCanvas'
-import { RiverDriftReplayCanvas } from './RiverDriftReplayCanvas'
-import { KartRacingReplayCanvas } from './KartRacingReplayCanvas'
+import { formatDateTime, formatDuration } from '../../../utils/DateTimeFormatter'
+import { supportsReplay } from '../replay/ReplayCanvasFactory'
+import { useTrainingReplayPlayer } from '../replay/useTrainingReplayPlayer'
+import { createReplayReturn, discardReplayReturn, REPLAY_RETURN, takeReplayReturn, type ReplayPosition } from '../replay/ReplayReturn'
 
 defineOptions({ name: 'TrainingRecordPage' })
 
 const record = shallowRef<TrainingRecord | null>(null)
 const loading = ref(true)
 const error = ref('')
-const playing = ref(false)
-const trajectory = ref(false)
-const elapsed = ref(0)
-const duration = computed(() => record.value?.replay?.durationMs ?? 0)
-const hasReplay = computed(() => !!record.value?.replay && isMiniTrainingGameId(record.value.gameId))
+const expanding = ref(false)
+const hasReplay = computed(() => supportsReplay(record.value))
 const details = computed(() => record.value ? presentSavedTraining(record.value) : null)
-const replayReady = ref(false)
-let id = ''
-let frame: number | null = null
-let lastFrameTime: number | null = null
-/** 历史按记录中的游戏选择画布，播放、拖动和暂停由页面统一处理。 */
-const replayCanvases = {
-  [TARGET_REACH_GAME_ID]: TargetReachReplayCanvas,
-  [TRAJECTORY_FOLLOW_GAME_ID]: TrajectoryFollowReplayCanvas,
-  [RIVER_DRIFT_GAME_ID]: RiverDriftReplayCanvas,
-  [KART_RACING_GAME_ID]: KartRacingReplayCanvas,
-}
-let canvas: InstanceType<(typeof replayCanvases)[keyof typeof replayCanvases]> | null = null
+const player = useTrainingReplayPlayer('#replay-canvas')
+const { elapsed, duration, playing, trajectory, ready: replayReady, error: replayError } = player
 let unloaded = false
+let returnTicket = ''
 
-useLoad((options) => { id = options.id ?? '' })
-useReady(() => { void loadRecord() })
-useDidHide(pause)
-useUnload(() => { unloaded = true; pause(); canvas = null })
-
-async function loadRecord() {
-  if (!id) {
-    loading.value = false
-    return
-  }
+useDidShow(() => {
+  const position = takeReplayReturn(returnTicket)
+  if (position) player.setPosition(position)
+})
+useUnload(() => { unloaded = true; discardReplayReturn(returnTicket) })
+useLoad(async (options) => {
   try {
+    const id = options.id ?? ''
+    if (!id.trim()) throw new Error('缺少训练记录编号。')
     const stored = await getTrainingRepository().getById(id)
-    if (unloaded) return
-    record.value = stored
-    loading.value = false
-    if (stored?.replay && isMiniTrainingGameId(stored.gameId)) {
-      await nextTick()
-      const surface = await queryCanvasSurface('#replay-canvas')
-      if (unloaded) return
-      const ReplayCanvas = replayCanvases[stored.gameId]
-      canvas = new ReplayCanvas(surface, stored.replay, stored.gameConfig)
-      replayReady.value = true
-      redraw()
+    if (!unloaded) {
+      record.value = stored
+      if (stored) player.setRecord(stored)
     }
   } catch (failure) {
-    error.value = failure instanceof Error ? failure.message : '读取训练记录失败。'
-  } finally { loading.value = false }
-}
+    if (!unloaded) error.value = failure instanceof Error ? failure.message : '读取训练记录失败。'
+  } finally {
+    if (!unloaded) loading.value = false
+  }
+})
 
-/** 画布帧推动回放，切出页面后暂停并释放尚未执行的帧。 */
-function tick(stamp?: number) {
-  if (!playing.value || !canvas) return
-  const now = typeof stamp === 'number' && Number.isFinite(stamp) ? stamp : Date.now()
-  if (lastFrameTime !== null) elapsed.value = Math.min(duration.value, elapsed.value + Math.min(100, Math.max(0, now - lastFrameTime)))
-  lastFrameTime = now
-  redraw()
-  if (elapsed.value >= duration.value) pause()
-  else frame = canvas.node.requestAnimationFrame(tick)
-}
-
-function redraw() { canvas?.draw(elapsed.value, trajectory.value) }
-
-function pause() {
-  playing.value = false
-  if (frame !== null) canvas?.node.cancelAnimationFrame(frame)
-  frame = null
-  lastFrameTime = null
-}
-
-function play() {
-  if (!canvas || !duration.value) return
-  if (playing.value) { pause(); return }
-  if (elapsed.value >= duration.value) elapsed.value = 0
-  trajectory.value = false
-  playing.value = true
-  frame = canvas.node.requestAnimationFrame(tick)
-}
-
-function seek(event: { detail: { value: number } }) {
-  elapsed.value = Math.min(duration.value, Math.max(0, event.detail.value))
-  redraw()
-}
-
-function switchMode() {
-  pause()
-  trajectory.value = !trajectory.value
-  redraw()
+/** 打开全屏前停止内嵌播放，返回事件只更新显示进度。 */
+async function expand() {
+  if (!record.value || !replayReady.value || expanding.value) return
+  expanding.value = true
+  player.pause()
+  const { elapsed, trajectory } = player.getPosition()
+  discardReplayReturn(returnTicket)
+  const ticket = createReplayReturn()
+  returnTicket = ticket
+  try {
+    error.value = ''
+    await Taro.navigateTo({
+      url: `/features/history/replay/index?id=${encodeURIComponent(record.value.id)}&elapsed=${elapsed}&trajectory=${Number(trajectory)}&ticket=${ticket}`,
+      events: {
+        [REPLAY_RETURN]: (position: ReplayPosition) => {
+          if (!unloaded && ticket === returnTicket && position) {
+            discardReplayReturn(ticket)
+            player.setPosition(position)
+          }
+        },
+      },
+    })
+  } catch {
+    discardReplayReturn(ticket)
+    error.value = '暂时无法打开全屏回放，请重试。'
+  }
+  finally { expanding.value = false }
 }
 
 async function removeRecord() {
   if (!record.value) return
   try {
-    const result = await Taro.showModal({ title: '删除训练记录', content: '训练摘要与本地回放将一并删除。' })
-    if (!result.confirm) return
-    pause()
-    await getTrainingRepository().delete(id)
+    const decision = await Taro.showModal({ title: '删除训练记录', content: '训练摘要与本地回放将一并删除。' })
+    if (!decision.confirm) return
+    player.pause()
+    await getTrainingRepository().delete(record.value.id)
     await Taro.navigateBack()
   } catch (failure) { error.value = failure instanceof Error ? failure.message : '删除训练记录失败。' }
 }
@@ -128,8 +91,8 @@ async function removeRecord() {
       <text class="mini-heading">{{ record.gameName }}</text>
       <view class="mini-card">
         <text class="mini-card-title">训练摘要</text>
-        <text class="mini-description">{{ new Date(record.completedAt).toLocaleString() }}</text>
-        <text class="mini-description">有效时长 {{ Math.round(record.result.durationMs / 1000) }} 秒</text>
+        <text class="mini-description">{{ formatDateTime(record.completedAt) }}</text>
+        <text class="mini-description">有效时长 {{ formatDuration(record.result.durationMs) }}</text>
         <text v-if="record.device" class="mini-description">{{ record.device.modelName }}</text>
         <text v-for="metric in details?.metrics ?? []" :key="metric.label" class="mini-description">
           {{ metric.label }} · {{ metric.value }}
@@ -137,10 +100,13 @@ async function removeRecord() {
       </view>
       <view v-if="hasReplay" class="mini-card">
         <text class="mini-card-title">训练回放</text>
+        <button v-if="replayReady" size="mini" :disabled="expanding" @tap="expand">展开全屏</button>
+        <text v-if="replayError" class="mini-error">{{ replayError }}</text>
+        <button v-if="replayError" size="mini" @tap="player.refresh">重试回放</button>
         <canvas id="replay-canvas" type="2d" class="mini-replay-canvas" />
-        <slider v-if="replayReady && duration > 0" :max="duration" :value="Math.round(elapsed)" @change="seek" />
-        <button v-if="replayReady" class="mini-primary" @tap="play">{{ playing ? '暂停回放' : '播放回放' }}</button>
-        <button v-if="replayReady" @tap="switchMode">{{ trajectory ? '返回动态回放' : '查看完整轨迹' }}</button>
+        <slider v-if="replayReady && duration > 0" :max="duration" :value="Math.round(elapsed)" @change="player.seek" />
+        <button v-if="replayReady" class="mini-primary" @tap="player.togglePlay">{{ playing ? '暂停回放' : '播放回放' }}</button>
+        <button v-if="replayReady" @tap="player.switchMode">{{ trajectory ? '返回动态回放' : '查看完整轨迹' }}</button>
       </view>
       <text v-else class="mini-description">这条记录的回放不可用。</text>
       <view v-for="section in details?.sections ?? []" :key="section.title" class="mini-card">

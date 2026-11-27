@@ -179,3 +179,76 @@ page {
   line-height: 1.4;
   color: var(--c-ink-2);
 }
+
+/* 横屏控件用固定逻辑像素，避免 rpx 随横屏长边放大。 */
+.immersive-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #0a1733;
+  color: #fff;
+}
+
+.immersive-canvas { display: block; width: 100%; height: 100%; }
+
+.immersive-toolbar {
+  position: absolute;
+  top: var(--safe-top, 12px);
+  left: var(--safe-left, 12px);
+  right: var(--safe-right, 12px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8PX;
+  pointer-events: none;
+}
+
+.immersive-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6PX;
+}
+
+.immersive-chip, .immersive-shell button.immersive-button {
+  margin: 0;
+  padding: 5PX 9PX;
+  border-radius: 8PX;
+  background: rgba(8, 22, 48, 0.90);
+  color: #fff;
+  font-size: 14PX;
+  line-height: 1.3;
+}
+
+.immersive-shell button.immersive-button { pointer-events: auto; min-height: 32PX; border: 1px solid #6983ac; }
+.immersive-shell button.immersive-button::after { border: 0; }
+.immersive-shell button.immersive-primary { background: #1647b2; border-color: #6e98ee; }
+.immersive-shell button[disabled] { opacity: 0.56; }
+
+.immersive-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: var(--safe-top, 12px) var(--safe-right, 12px) var(--safe-bottom, 12px) var(--safe-left, 12px);
+  background: rgba(5, 15, 34, 0.56);
+}
+
+.immersive-panel {
+  box-sizing: border-box;
+  width: 90%;
+  max-width: 540PX;
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 14PX;
+  border: 1px solid #476291;
+  border-radius: 20px;
+  background: #10264a;
+}
+
+.immersive-title { display: block; font-size: 20PX; font-weight: 700; }
+.immersive-note { display: block; margin: 8PX 0; color: #d4e1f5; font-size: 14PX; line-height: 1.45; }
+.immersive-error { color: #ffd1d7; }

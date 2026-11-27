@@ -16,6 +16,26 @@ export function queryCanvasSurface(selector: string): Promise<CanvasSurface> {
     }).exec())
 }
 
+/** 旋转或初次渲染时节点可能晚一帧出现，只重试当前页面的查询。 */
+export async function waitForCanvasSurface(
+  selector: string, isCurrent: () => boolean, orientation?: 'landscape',
+): Promise<CanvasSurface | null> {
+  for (let attempt = 0; attempt < 3 && isCurrent(); attempt += 1) {
+    await new Promise<void>((resolve) => Taro.nextTick(resolve))
+    if (!isCurrent()) return null
+    try {
+      const surface = await queryCanvasSurface(selector)
+      // 横屏页等待原生旋转提交后再创建 renderer。
+      if (orientation === 'landscape' && surface.width < surface.height) throw new Error('画布正在切换到横屏，请重试。')
+      return isCurrent() ? surface : null
+    } catch (failure) {
+      if (attempt === 2) throw failure
+      await new Promise<void>((resolve) => setTimeout(resolve, 35))
+    }
+  }
+  return null
+}
+
 /** 设置物理像素缓冲区，业务绘图仍然使用逻辑像素。 */
 export function prepareCanvas(surface: CanvasSurface): CanvasRenderingContext2D {
   const scale = Math.min(2, Math.max(1, Taro.getWindowInfo().pixelRatio || 1))

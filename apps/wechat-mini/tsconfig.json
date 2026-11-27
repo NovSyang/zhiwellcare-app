@@ -11,7 +11,8 @@
     "paths": {
       "@/shared/core": ["../../src/core/shared.ts"],
       "@/shared/courses": ["../../src/data/courses.ts"],
-      "@/shared/mall": ["../../src/data/mall.ts"],
+      "@/shared/mall": ["./src/app/MiniMall.ts"],
+      "@/shared/mall-catalog": ["../../src/data/mall.catalog.ts"],
       "@/shared/target-replay": ["../../src/games/target-reach/replay/TargetReachReplayTimeline.ts"],
       "@/shared/target-viewport": ["../../src/games/target-reach/TargetReachViewportMapper.ts"],
       "@/shared/target-controller": ["../../src/games/target-reach/TargetReachController.ts"],

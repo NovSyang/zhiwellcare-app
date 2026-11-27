@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { useLoad } from '@tarojs/taro'
 import { findGoodsById } from '@/shared/mall'
+import GoodsCover from '../../../components/mall/GoodsCover.vue'
 
 defineOptions({ name: 'GoodsDetailPage' })
 const id = ref('')
@@ -16,7 +17,8 @@ useLoad((options) => { id.value = options.id ?? '' })
     <template v-if="product">
       <text class="mini-heading">{{ product.name }}</text>
       <view class="mini-card">
-        <image v-if="product.coverImage" class="mini-cover" :src="product.coverImage" :mode="product.coverFit === 'cover' ? 'aspectFill' : 'aspectFit'" />
+        <!-- 分包也从包根加载商品图。 -->
+        <GoodsCover :image="product.coverImage" :fallback="product.cover" :fit="product.coverFit" />
         <text class="mini-card-title">演示价 ¥{{ product.price }}/{{ product.priceUnit }}</text>
         <text class="mini-description">{{ product.summary }}</text>
         <text v-if="product.badges.length" class="mini-description">{{ product.badges.join(' · ') }}</text>

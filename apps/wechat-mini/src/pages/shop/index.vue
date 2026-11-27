@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import Taro from '@tarojs/taro'
 import { mallCategories, mallGoods } from '@/shared/mall'
+import GoodsCover from '../../components/mall/GoodsCover.vue'
 
 defineOptions({ name: 'ShopPage' })
 
@@ -23,7 +24,8 @@ function openProduct(id: string) {
       </button>
     </view>
     <view v-for="product in products" :key="product.id" class="mini-card" @tap="openProduct(product.id)">
-      <image v-if="product.coverImage" class="mini-cover" :src="product.coverImage" :mode="product.coverFit === 'cover' ? 'aspectFill' : 'aspectFit'" />
+      <!-- 列表和详情使用同一张包内图片及失败占位。 -->
+      <GoodsCover :image="product.coverImage" :fallback="product.cover" :fit="product.coverFit" />
       <text class="mini-card-title">{{ product.name }}</text>
       <text class="mini-description">{{ product.summary }}</text>
       <text class="mini-description mini-price">演示价 ¥{{ product.price }}/{{ product.priceUnit }}</text>

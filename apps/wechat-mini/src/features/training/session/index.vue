@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, ref, shallowRef, watch } from 'vue'
 import Taro, { useDidHide, useDidShow, useLoad, useReady, useUnload } from '@tarojs/taro'
-import type { GameHudMetric, GameInput, GameResultPresentation, TrainingRecord, TrainingSessionState } from '@/shared/core'
+import type { GameHudMetric, GameInput, TrainingRecord, TrainingSessionState } from '@/shared/core'
 import { TARGET_REACH_GAME_ID } from '@/shared/target-config'
 import {
   connectionSnapshot, foreground, getTrainingRepository, motionProfileService, readyForTraining,
@@ -10,7 +10,9 @@ import {
 import { isMiniTrainingGameId, miniTrainingGames, type MiniTrainingGameId } from '../../../app/TrainingGames'
 import { getTrainingOffers } from '../../../app/TrainingOffers'
 import { createTrainingClock } from '../../../platform/TrainingClock'
-import { queryCanvasSurface, type CanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
+import { waitForCanvasSurface, type CanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
+import { readImmersiveLayout, setTrainingScreenOn } from '../../../platform/ImmersiveLayout'
+import { formatDuration } from '../../../utils/DateTimeFormatter'
 import { createTrainingRun } from './createTrainingRun'
 import type { TrainingPauseReason } from './MiniTrainingRun'
 
@@ -19,7 +21,8 @@ defineOptions({ name: 'TrainingSessionPage' })
 const gameId = ref<MiniTrainingGameId | null>(TARGET_REACH_GAME_ID)
 const game = computed(() => gameId.value ? miniTrainingGames[gameId.value] : null)
 const state = ref<TrainingSessionState>('idle')
-const seconds = ref(0)
+const elapsed = ref(0)
+const insets = ref(readImmersiveLayout())
 const metrics = shallowRef<GameHudMetric[]>([])
 const canResume = ref(false)
 const reason = ref<TrainingPauseReason | null>(null)
@@ -30,7 +33,8 @@ const saved = ref(false)
 const error = ref('')
 const saveError = ref('')
 const finished = shallowRef<TrainingRecord | null>(null)
-const result = shallowRef<GameResultPresentation | null>(null)
+const openingResult = ref(false)
+const resultError = ref('')
 const connected = computed(() => sensorSnapshot.value?.state === 'connected')
 const calibrating = computed(() => {
   const current = sensorSnapshot.value
@@ -77,12 +81,12 @@ useReady(() => {
 useDidShow(() => {
   pageVisible = true
   applyVisibility()
-  if (mounted && !finished.value) void mountCanvas()
 })
 useDidHide(() => { pageVisible = false; applyVisibility() })
 useUnload(() => {
   disposed = true
   canvasRevision += 1
+  void setTrainingScreenOn(false)
   stopLoops()
   training?.run.abort()
   unsubscribe?.()
@@ -97,21 +101,38 @@ function applyVisibility() {
   if (visible === active) return
   active = visible
   training?.run.setForeground(active)
-  if (!active && training && !finished.value) sensorService.resetCalibration()
+  if (!active) {
+    canvasRevision += 1
+    stopLoops()
+    if (training && !finished.value) sensorService.resetCalibration()
+    void setTrainingScreenOn(false)
+  } else {
+    if (training && !finished.value) void setTrainingScreenOn(true)
+    if (mounted && !finished.value) resize()
+    if (saved.value && !resultError.value) void openResult()
+  }
   syncRun()
 }
 
-function resize() { if (active && !finished.value) void mountCanvas() }
+function resize() {
+  insets.value = readImmersiveLayout()
+  if (active && !finished.value) void mountCanvas()
+}
 
 async function mountCanvas() {
+  if (!active || disposed) return
   const revision = ++canvasRevision
+  const isCurrent = () => active && !disposed && revision === canvasRevision && !finished.value
+  insets.value = readImmersiveLayout()
   stopPainting()
   surface = null
   drawFrame = null
   canvasReady.value = false
   try {
-    const current = await queryCanvasSurface('#training-canvas')
-    if (disposed || revision !== canvasRevision || finished.value) return
+    // 旋转后重读节点宽高，只重建绘制闭包，保留当前训练实例。
+    await nextTick()
+    const current = await waitForCanvasSurface('#training-canvas', isCurrent, 'landscape')
+    if (!current) return
     const draw = training?.mount(current)
     draw?.()
     surface = current
@@ -120,7 +141,7 @@ async function mountCanvas() {
     error.value = ''
     syncRun()
   } catch (failure) {
-    if (disposed || revision !== canvasRevision) return
+    if (!isCurrent()) return
     training?.run.pause()
     syncRun()
     error.value = errorText(failure, '训练画布初始化失败，请重试。')
@@ -134,7 +155,7 @@ function syncRun() {
   const status = run.getStatus()
   const previousState = state.value
   state.value = frame.session.state
-  seconds.value = Math.floor(frame.session.playingElapsedMs / 1000)
+  elapsed.value = Math.floor(frame.session.playingElapsedMs / 1000) * 1000
   const nextMetrics = training.metrics()
   if (nextMetrics.length !== metrics.value.length || nextMetrics.some((metric, index) => metric.value !== metrics.value[index]?.value)) {
     metrics.value = nextMetrics
@@ -144,8 +165,8 @@ function syncRun() {
   const record = run.getRecord()
   if (record && !finished.value) {
     finished.value = record
-    result.value = training.present()
     stopLoops()
+    void setTrainingScreenOn(false)
     void saveRecord()
     return
   }
@@ -207,6 +228,7 @@ async function begin() {
     originalDeviceId = binding.deviceId
     drawFrame = draw
     training = session
+    void setTrainingScreenOn(true)
     syncRun()
     Taro.enableAlertBeforeUnload?.({ message: '本次训练尚未保存，退出会结束当前训练。' })
   } catch (failure) {
@@ -241,108 +263,105 @@ async function saveRecord() {
   try {
     await getTrainingRepository().save(record)
     saved.value = true
-    if (!disposed) Taro.disableAlertBeforeUnload?.()
   } catch (failure) { saveError.value = errorText(failure, '本次训练保存失败，请重试。') }
   finally { saving.value = false }
+  if (saved.value) await openResult()
 }
 
 async function exitTraining() {
   pause()
-  if (saving.value) return
+  if (saving.value || openingResult.value) return
   try {
     if (training && !saved.value) {
       const decision = await Taro.showModal({ title: '离开本次训练', content: '离开后，本次未保存的训练将丢失。' })
       if (!decision.confirm) return
     }
-    Taro.disableAlertBeforeUnload?.()
-    await Taro.navigateBack()
-  } catch (failure) { error.value = errorText(failure, '退出训练失败，请重试。') }
+    await clearExitAlert()
+    if (Taro.getCurrentPages().length > 1) await Taro.navigateBack()
+    else await Taro.switchTab({ url: '/pages/training/index' })
+  } catch (failure) {
+    if (training && !saved.value) Taro.enableAlertBeforeUnload?.({ message: '本次训练尚未保存，退出会结束当前训练。' })
+    error.value = errorText(failure, '退出训练失败，请重试。')
+  }
 }
 
-function openReplay() {
-  if (saved.value && finished.value) void Taro.navigateTo({
-    url: `/features/history/detail/index?id=${encodeURIComponent(finished.value.id)}`,
-  })
+/** 保存与跳转各自重试，跳转失败时同一条记录已经留在本机。 */
+async function openResult() {
+  const record = finished.value
+  if (!record || !saved.value || !active || disposed || openingResult.value) return
+  openingResult.value = true
+  resultError.value = ''
+  try {
+    await setTrainingScreenOn(false)
+    if (!active || disposed) return
+    await clearExitAlert()
+    if (!active || disposed) return
+    await Taro.redirectTo({ url: `/features/training/result/index?id=${encodeURIComponent(record.id)}` })
+  } catch {
+    if (!disposed) resultError.value = '训练已保存，暂时无法打开结果页。'
+  } finally { openingResult.value = false }
+}
+
+/** 等待平台撤销退出提示，保存后的主动跳转不会抢在撤销操作前。 */
+async function clearExitAlert() {
+  try { await Taro.disableAlertBeforeUnload?.() }
+  catch { globalThis.console?.warn('微信退出提示暂不可用。') }
 }
 
 function errorText(failure: unknown, fallback: string) { return failure instanceof Error ? failure.message : fallback }
 </script>
 
 <template>
-  <view class="mini-page">
-    <view v-if="!game" class="mini-card">
-      <text class="mini-description">当前版本没有这项训练。</text>
-      <button @tap="exitTraining">返回训练大厅</button>
+  <view class="immersive-shell" :style="insets">
+    <canvas v-if="game" id="training-canvas" type="2d" class="immersive-canvas" />
+    <!-- 训练数据和操作悬浮在画布上，横屏后画布使用整个窗口。 -->
+    <view v-if="game && !finished && (state === 'playing' || state === 'countdown')" class="immersive-toolbar">
+      <view class="immersive-row">
+        <text class="immersive-chip">有效 {{ formatDuration(elapsed) }}</text>
+        <text class="immersive-chip">{{ connected ? '设备已连接' : '设备已断开' }}</text>
+        <text v-for="metric in metrics" :key="metric.label" class="immersive-chip">{{ metric.label }} {{ metric.value }}</text>
+      </view>
+      <view class="immersive-row">
+        <button size="mini" class="immersive-button" @tap="pause">暂停</button>
+        <button size="mini" class="immersive-button" @tap="exitTraining">结束</button>
+      </view>
     </view>
-    <template v-else-if="result">
-      <text class="mini-heading">训练结果</text>
-      <view class="mini-card">
-        <text class="mini-card-title">{{ result.title }}</text>
-        <text class="mini-description">有效训练 {{ seconds }} 秒</text>
-        <text v-for="metric in result.metrics" :key="metric.label" class="mini-description">{{ metric.label }} · {{ metric.value }}</text>
-      </view>
-      <view v-for="section in result.sections" :key="section.title" class="mini-card">
-        <text class="mini-card-title">{{ section.title }}</text>
-        <text v-for="item in section.items" :key="item.label" class="mini-description">
-          {{ item.label }} · {{ item.value }} {{ item.detail }}
-        </text>
-      </view>
-      <view class="mini-card">
-        <text v-if="saving" class="mini-description">正在保存训练与回放…</text>
-        <text v-else-if="saved" class="mini-description">已保存到本机训练历史</text>
-        <text v-if="saveError" class="mini-error">{{ saveError }}</text>
-        <button v-if="saved" class="mini-primary" @tap="openReplay">查看训练回放</button>
-        <button v-else-if="!saving" class="mini-primary" @tap="saveRecord">重试保存</button>
-        <button :disabled="saving" @tap="exitTraining">返回训练大厅</button>
-      </view>
-    </template>
-    <template v-else>
-      <text class="mini-heading">{{ game.name }}</text>
-      <view class="training-hud">
-        <text v-for="metric in metrics" :key="metric.label">{{ metric.label }} {{ metric.value }}</text>
-        <text>有效 {{ seconds }} 秒</text>
-      </view>
-      <canvas id="training-canvas" type="2d" class="training-canvas" />
-      <view class="mini-card">
-        <text v-if="error" class="mini-error">{{ error }}</text>
-        <text v-if="!connected && connectionSnapshot.message" class="mini-description">{{ connectionSnapshot.message }}</text>
-        <button v-if="!canvasReady && error" @tap="mountCanvas">重试画布</button>
-        <template v-if="state === 'idle'">
-          <text class="mini-description">{{ game.instructions }}</text>
-          <button class="mini-primary" :disabled="busy || !canvasReady || !readyForTraining" @tap="begin">开始训练</button>
+    <view v-else class="immersive-overlay">
+      <view class="immersive-panel">
+        <template v-if="finished">
+          <text class="immersive-title">训练已完成</text>
+          <text v-if="saving" class="immersive-note">正在保存训练与回放…</text>
+          <text v-else-if="saved" class="immersive-note">已保存到本机训练历史</text>
+          <text v-if="saveError || resultError" class="immersive-note immersive-error">{{ saveError || resultError }}</text>
+          <view class="immersive-row">
+            <button v-if="saved" size="mini" class="immersive-button immersive-primary" :disabled="openingResult" @tap="openResult">查看训练结果</button>
+            <button v-else-if="!saving" size="mini" class="immersive-button immersive-primary" @tap="saveRecord">重试保存</button>
+            <button size="mini" class="immersive-button" :disabled="saving || openingResult" @tap="exitTraining">返回训练大厅</button>
+          </view>
         </template>
-        <button v-else-if="state === 'playing' || state === 'countdown'" @tap="pause">暂停训练</button>
-        <template v-else-if="state === 'paused'">
-          <text class="mini-description">{{ reason ? pauseText[reason] : '训练已暂停。' }}</text>
-          <button class="mini-primary" :disabled="!canvasReady || !canResume" @tap="resume">继续训练</button>
+        <template v-else>
+          <text class="immersive-title">{{ game?.name ?? '训练不可用' }}</text>
+          <text v-if="!game" class="immersive-note">当前版本没有这项训练。</text>
+          <template v-else>
+            <text v-if="state === 'idle'" class="immersive-note">{{ game.instructions }}</text>
+            <text v-else-if="state === 'paused'" class="immersive-note">{{ reason ? pauseText[reason] : '训练已暂停。' }}</text>
+            <text class="immersive-note">{{ connected ? readyForTraining ? '设备已连接，中心已校准' : '设备已连接，需校准中心' : connectionSnapshot.message || '设备未连接' }}</text>
+          </template>
+          <text v-if="error" class="immersive-note immersive-error">{{ error }}</text>
+          <view class="immersive-row">
+            <template v-if="game">
+              <button v-if="state === 'idle'" size="mini" class="immersive-button immersive-primary" :disabled="busy || !canvasReady || !readyForTraining" @tap="begin">开始训练</button>
+              <button v-else-if="state === 'paused'" size="mini" class="immersive-button immersive-primary" :disabled="!canvasReady || !canResume" @tap="resume">继续训练</button>
+              <button v-if="!canvasReady && error" size="mini" class="immersive-button" @tap="mountCanvas">重试画布</button>
+              <button v-if="!connected && connectionSnapshot.binding" size="mini" class="immersive-button" :disabled="busy" @tap="reconnect">重连设备</button>
+              <button v-else-if="connected && !readyForTraining" size="mini" class="immersive-button" :disabled="calibrating || busy" @tap="sensorService.startCalibration()">
+                {{ calibrating ? '正在校准' : '校准中心' }}
+              </button>
+            </template>
+            <button size="mini" class="immersive-button" @tap="exitTraining">{{ state === 'idle' ? '返回训练大厅' : '结束并离开' }}</button>
+          </view>
         </template>
-        <button v-if="!connected" :disabled="busy" @tap="reconnect">重连已绑定设备</button>
-        <button v-else-if="!readyForTraining" :disabled="calibrating || busy" @tap="sensorService.startCalibration()">
-          {{ calibrating ? '正在校准，请保持静止' : '校准中心' }}
-        </button>
-        <button @tap="exitTraining">{{ state === 'idle' ? '返回训练大厅' : '结束并离开' }}</button>
       </view>
-    </template>
+    </view>
   </view>
 </template>
-
-<style>
-/* 独立显示 HUD 和画布，目标区域在窄屏仍保留一致比例。 */
-.training-hud {
-  display: flex;
-  justify-content: space-between;
-  font-size: 26px;
-  font-weight: 600;
-  margin-bottom: 16px;
-}
-
-.training-canvas {
-  display: block;
-  width: 100%;
-  height: 530px;
-  background: var(--canvas-bg);
-  outline: 1px solid var(--canvas-border);
-  border-radius: 20px;
-  margin-bottom: 22px;
-}
-</style>

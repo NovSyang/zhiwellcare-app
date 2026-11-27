@@ -4,6 +4,7 @@ import { useLoad } from '@tarojs/taro'
 import { courses } from '@/shared/courses'
 import { courseDayKey } from '@/shared/core'
 import { courseCheckins } from '../../../app/MiniServices'
+import { formatDateKey } from '../../../utils/DateTimeFormatter'
 
 defineOptions({ name: 'CourseDetailPage' })
 
@@ -53,7 +54,8 @@ async function complete() {
       </view>
       <view class="mini-card">
         <text class="mini-card-title">累计打卡 {{ dates.length }} 次</text>
-        <text v-if="dates.length" class="mini-description">最近 {{ dates.slice(-3).reverse().join('、') }}</text>
+        <!-- 只转换展示文本，打卡业务日期键继续保留。 -->
+        <text v-if="dates.length" class="mini-description">最近 {{ dates.slice(-3).reverse().map(formatDateKey).join('、') }}</text>
         <text v-if="error" class="mini-error">{{ error }}</text>
         <button class="mini-primary" :disabled="checkedIn || saving" @tap="complete">{{ checkedIn ? '今日已打卡' : '完成跟练并打卡' }}</button>
       </view>

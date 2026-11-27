@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import Taro, { useDidShow } from '@tarojs/taro'
 import { buildTrainingHistoryGroups, type TrainingRecord } from '@/shared/core'
 import { connectionSnapshot, getTrainingRepository } from '../../app/MiniServices'
+import TrainingGameHistoryCard from '../../components/history/TrainingGameHistoryCard.vue'
 
 defineOptions({ name: 'ProfilePage' })
 
@@ -21,8 +22,14 @@ useDidShow(async () => {
   } finally { loading.value = false }
 })
 
-function openRecord(id: string) {
-  void Taro.navigateTo({ url: `/features/history/detail/index?id=${encodeURIComponent(id)}` })
+// 使用历史里的游戏 ID，已下架游戏也能进入记录列表。
+async function openHistory(gameId: string) {
+  error.value = ''
+  try {
+    await Taro.navigateTo({ url: `/features/history/list/index?gameId=${encodeURIComponent(gameId)}` })
+  } catch {
+    error.value = '暂时无法打开游戏历史，请重试。'
+  }
 }
 
 /** 正式隐私指引由微信平台提供，本页也保留离线可读的数据说明。 */
@@ -54,13 +61,7 @@ function openPrivacyGuide() {
       <text v-else-if="!groups.length" class="mini-description">暂无训练记录。</text>
       <text v-else class="mini-description">共 {{ records.length }} 次训练</text>
     </view>
-    <view v-for="group in groups" :key="group.gameId" class="mini-card">
-      <text class="mini-card-title">{{ group.gameName }}</text>
-      <text class="mini-description">{{ group.trainingCount }} 次 · 累计 {{ Math.round(group.totalDurationMs / 1000) }} 秒</text>
-      <button v-for="item in group.records" :key="item.id" @tap="openRecord(item.id)">
-        {{ new Date(item.completedAt).toLocaleString() }}
-      </button>
-    </view>
+    <TrainingGameHistoryCard v-for="group in groups" :key="group.gameId" :group="group" selectable @select="openHistory" />
     <!-- 按当前实际存储和请求范围说明数据用途。 -->
     <view class="mini-card">
       <text class="mini-card-title">数据与隐私</text>

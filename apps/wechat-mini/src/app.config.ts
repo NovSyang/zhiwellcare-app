@@ -12,9 +12,9 @@ export default defineAppConfig({
   // 详情页按需加载，五个 Tab 保持在主包。
   subPackages: [
     { root: 'features/content', pages: ['course/index', 'goods/index'] },
-    { root: 'features/history', pages: ['detail/index'] },
+    { root: 'features/history', pages: ['list/index', 'detail/index', 'replay/index'] },
     { root: 'features/settings', pages: ['range/index'] },
-    { root: 'features/training', pages: ['session/index'] },
+    { root: 'features/training', pages: ['session/index', 'result/index'] },
   ],
   window: {
     navigationBarTitleText: '智为康乐',
