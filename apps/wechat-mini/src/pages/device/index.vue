@@ -9,9 +9,10 @@ import {
 } from '../../app/MiniServices'
 import { useMiniTabPage } from '../../app/MiniPageSafety'
 import MiniPageHeader from '../../components/app/MiniPageHeader.vue'
+import MiniTabScrollBody from '../../components/app/MiniTabScrollBody.vue'
 
 defineOptions({ name: 'DevicePage' })
-const viewport = useMiniTabPage('pages/device/index')
+const { viewport, scrollStyle, fallbackPageScroll } = useMiniTabPage('pages/device/index')
 
 const labels: Record<SensorConnectionState, string> = {
   idle: '未连接', scanning: '正在扫描', connecting: '正在连接', discovering: '正在发现服务',
@@ -73,10 +74,11 @@ function connect(device: SensorDevice) {
 </script>
 
 <template>
-  <view class="mini-tab-page" :style="viewport">
-    <MiniPageHeader title="设备" device-page />
-    <scroll-view scroll-y class="mini-tab-scroll">
-      <view class="mini-page mini-tab-content">
+  <view class="mini-tab-page" :class="{ 'mini-tab-page--fallback': fallbackPageScroll }" :style="viewport">
+    <view id="mini-tab-header" class="mini-tab-header">
+      <MiniPageHeader title="设备" device-page />
+    </view>
+    <MiniTabScrollBody :fallback="fallbackPageScroll" :scroll-style="scrollStyle">
         <view class="mini-card">
           <text class="mini-card-title">{{ binding?.name ?? '腕部训练设备' }}</text>
           <text class="mini-description">{{ readyForTraining ? '已完成中心校准，可开始训练' : labels[state] }}</text>
@@ -105,7 +107,6 @@ function connect(device: SensorDevice) {
             {{ device.name }} · {{ device.id.slice(-8) }}
           </button>
         </view>
-      </view>
-    </scroll-view>
+    </MiniTabScrollBody>
   </view>
 </template>

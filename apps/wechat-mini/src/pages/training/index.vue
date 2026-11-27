@@ -4,11 +4,12 @@ import Taro, { useDidShow } from '@tarojs/taro'
 import { connectionSnapshot, deviceBusy, interactionsBlocked, readyForTraining, sensorSnapshot } from '../../app/MiniServices'
 import { navigateMini, useMiniTabPage } from '../../app/MiniPageSafety'
 import MiniPageHeader from '../../components/app/MiniPageHeader.vue'
+import MiniTabScrollBody from '../../components/app/MiniTabScrollBody.vue'
 import { isMiniTrainingGameId, miniTrainingGames, type MiniTrainingGameId } from '../../app/TrainingGames'
 import { getTrainingOffers } from '../../app/TrainingOffers'
 
 defineOptions({ name: 'TrainingPage' })
-const viewport = useMiniTabPage('pages/training/index')
+const { viewport, scrollStyle, fallbackPageScroll } = useMiniTabPage('pages/training/index')
 
 const offers = ref<Awaited<ReturnType<typeof getTrainingOffers>>>([])
 const cards = computed(() => offers.value.flatMap(({ game, device }) => isMiniTrainingGameId(game.gameId)
@@ -57,10 +58,11 @@ watch([sensorConnected, () => connectionSnapshot.value.binding?.deviceId], () =>
 </script>
 
 <template>
-  <view class="mini-tab-page" :style="viewport">
-    <MiniPageHeader title="训练" />
-    <scroll-view scroll-y class="mini-tab-scroll">
-      <view class="mini-page mini-tab-content">
+  <view class="mini-tab-page" :class="{ 'mini-tab-page--fallback': fallbackPageScroll }" :style="viewport">
+    <view id="mini-tab-header" class="mini-tab-header">
+      <MiniPageHeader title="训练" />
+    </view>
+    <MiniTabScrollBody :fallback="fallbackPageScroll" :scroll-style="scrollStyle">
         <view v-for="{ game, id, info, matched } in cards" :key="id" class="mini-card">
           <text class="mini-card-title">{{ game.name }}</text>
           <text class="mini-description">{{ game.summary }}</text>
@@ -74,7 +76,6 @@ watch([sensorConnected, () => connectionSnapshot.value.binding?.deviceId], () =>
         </view>
         <text v-if="error" class="mini-error">{{ error }}</text>
         <text v-else-if="!cards.length" class="mini-description">{{ loading ? '正在读取训练目录…' : '当前没有可展示的微信训练。' }}</text>
-      </view>
-    </scroll-view>
+    </MiniTabScrollBody>
   </view>
 </template>

@@ -6,9 +6,10 @@ import { courses, courseCategories } from '@/shared/courses'
 import { courseCheckins } from '../../app/MiniServices'
 import { navigateMini, useMiniTabPage } from '../../app/MiniPageSafety'
 import MiniPageHeader from '../../components/app/MiniPageHeader.vue'
+import MiniTabScrollBody from '../../components/app/MiniTabScrollBody.vue'
 
 defineOptions({ name: 'CoursesPage' })
-const viewport = useMiniTabPage('pages/courses/index')
+const { viewport, scrollStyle, fallbackPageScroll } = useMiniTabPage('pages/courses/index')
 
 const category = ref('全部')
 const checkins = ref<Record<string, string[]>>({})
@@ -36,10 +37,11 @@ function openCourse(id: string) {
 </script>
 
 <template>
-  <view class="mini-tab-page" :style="viewport">
-    <MiniPageHeader title="课程" />
-    <scroll-view scroll-y class="mini-tab-scroll">
-      <view class="mini-page mini-tab-content">
+  <view class="mini-tab-page" :class="{ 'mini-tab-page--fallback': fallbackPageScroll }" :style="viewport">
+    <view id="mini-tab-header" class="mini-tab-header">
+      <MiniPageHeader title="课程" />
+    </view>
+    <MiniTabScrollBody :fallback="fallbackPageScroll" :scroll-style="scrollStyle">
         <view class="mini-card">
           <text class="mini-card-title">打卡进度</text>
           <text v-if="checkinError" class="mini-error">{{ checkinError }}</text>
@@ -69,7 +71,6 @@ function openCourse(id: string) {
           <text class="mini-description">{{ course.summary }}</text>
           <text v-if="checkins[course.id]?.includes(stats.day)" class="mini-description mini-today">今日已打卡</text>
         </view>
-      </view>
-    </scroll-view>
+    </MiniTabScrollBody>
   </view>
 </template>

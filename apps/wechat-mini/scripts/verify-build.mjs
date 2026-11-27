@@ -25,12 +25,38 @@ assert.match(manifest.version, /^\d+\.\d+\.\d+$/)
 assert.equal(lockfile.version, manifest.version)
 assert.equal(lockfile.packages[''].version, manifest.version)
 assert.ok(common.includes(JSON.stringify(manifest.version)), '小程序构建号未进入主包')
+
+// 同时校验页面绑定、原生滚动节点及 WXSS，避免编译成功却无法滑动。
 assert.ok(common.includes('mini-page-header'), '主包缺少通用页头组件')
+const scrollBody = readFileSync(new URL('../src/components/app/MiniTabScrollBody.vue', import.meta.url), 'utf8')
+assert.match(scrollBody, /<view\b[^>]*v-if="fallback"/, '尺寸不可用时必须使用普通 view')
+const scrollTag = scrollBody.match(/<scroll-view\b[^>]*>/)?.[0] ?? ''
+assert.match(scrollTag, /:scroll-y="true"/, '竖向原生滚动须使用布尔值')
+assert.match(scrollTag, /:style="scrollStyle"/, '原生滚动区须接收实测高度')
+const compiledScrollProps = common.match(/\{[^{}]*["']mini-tab-scroll["'][^{}]*}/g) ?? []
+assert.ok(compiledScrollProps.some((props) => /["']scroll-y["']\s*:\s*(?:true|!0)\s*[,}]/.test(props)),
+  '编译后的 Vue 正文没有给 scroll-y 传入 true')
+const nativeTemplates = readFileSync(join(output, 'base.wxml'), 'utf8')
+assert.match(nativeTemplates, /<scroll-view\b[^>]*\bscroll-y="\{\{[^"]+\}\}"/, '缺少绑定 scroll-y 的原生模板')
+for (const [name, css] of [
+  ['源样式', readFileSync(new URL('../src/app.css', import.meta.url), 'utf8')],
+  ['生产 WXSS', readFileSync(join(output, 'app-origin.wxss'), 'utf8')],
+]) {
+  const rule = css.replace(/\/\*[\s\S]*?\*\//g, '').match(/\.mini-tab-scroll\s*\{([^}]*)\}/)?.[1] ?? ''
+  assert.match(rule, /(?:^|;)\s*height\s*:\s*calc\(\s*100vh\s*-/, `${name}缺少正文初始高度`)
+  assert.doesNotMatch(rule, /(?:^|;)\s*(?:height\s*:\s*0|flex\s*:\s*1)(?:[\w.]|\s|;|$)/, `${name}仍依赖零高度 Flex 布局`)
+}
+assert.notEqual(app.window?.disableScroll, true, '全局配置禁止了 Tab 的降级原生滚动')
 for (const { pagePath } of app.tabBar.list) {
   const source = readFileSync(new URL(`../src/${pagePath}.vue`, import.meta.url), 'utf8')
   assert.match(source, /import MiniPageHeader from ['"][^'"]*\/MiniPageHeader\.vue['"]/, pagePath)
   assert.match(source, /<MiniPageHeader\b/, pagePath)
-  assert.ok(readFileSync(join(output, `${pagePath}.js`), 'utf8').includes('mini-tab-scroll'), `${pagePath} 缺少独立内容滚动区`)
+  assert.equal([...source.matchAll(/<view\b[^>]*\bid="mini-tab-header"/g)].length, 1, `${pagePath} 缺少唯一的页头测量节点`)
+  assert.match(source, /{[^}]*\bviewport\b[^}]*\bscrollStyle\b[^}]*\bfallbackPageScroll\b[^}]*}\s*=\s*useMiniTabPage\s*\(/, pagePath)
+  assert.match(source, /<MiniTabScrollBody\b[^>]*:fallback="fallbackPageScroll"[^>]*:scroll-style="scrollStyle"/, pagePath)
+  assert.ok(readFileSync(join(output, `${pagePath}.js`), 'utf8').includes('mini-tab-header'), `${pagePath} 未生成页头测量节点`)
+  const config = JSON.parse(readFileSync(join(output, `${pagePath}.json`), 'utf8'))
+  assert.notEqual(config.disableScroll, true, `${pagePath} 禁止了降级原生滚动`)
 }
 // 原生 Tab 的两态图标都必须来自构建包，且保持制作时的像素尺寸。
 const tabIcons = app.tabBar.list.flatMap(({ iconPath, selectedIconPath }) => [iconPath, selectedIconPath])

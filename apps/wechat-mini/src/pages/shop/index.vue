@@ -5,9 +5,10 @@ import { mallCategories, mallGoods } from '@/shared/mall'
 import GoodsCover from '../../components/mall/GoodsCover.vue'
 import { navigateMini, useMiniTabPage } from '../../app/MiniPageSafety'
 import MiniPageHeader from '../../components/app/MiniPageHeader.vue'
+import MiniTabScrollBody from '../../components/app/MiniTabScrollBody.vue'
 
 defineOptions({ name: 'ShopPage' })
-const viewport = useMiniTabPage('pages/shop/index')
+const { viewport, scrollStyle, fallbackPageScroll } = useMiniTabPage('pages/shop/index')
 
 const category = ref<'all' | 'hardware' | 'service'>('all')
 const products = computed(() => mallGoods.filter((item) => category.value === 'all' || item.kind === category.value))
@@ -20,10 +21,11 @@ function openProduct(id: string) {
 </script>
 
 <template>
-  <view class="mini-tab-page" :style="viewport">
-    <MiniPageHeader title="商城" />
-    <scroll-view scroll-y class="mini-tab-scroll">
-      <view class="mini-page mini-tab-content">
+  <view class="mini-tab-page" :class="{ 'mini-tab-page--fallback': fallbackPageScroll }" :style="viewport">
+    <view id="mini-tab-header" class="mini-tab-header">
+      <MiniPageHeader title="商城" />
+    </view>
+    <MiniTabScrollBody :fallback="fallbackPageScroll" :scroll-style="scrollStyle">
         <view class="mini-filters">
           <button v-for="item in mallCategories" :key="item.id" size="mini" :class="{ 'mini-primary': category === item.id }" @tap="category = item.id">
             {{ item.label }}
@@ -36,7 +38,6 @@ function openProduct(id: string) {
           <text class="mini-description">{{ product.summary }}</text>
           <text class="mini-description mini-price">演示价 ¥{{ product.price }}/{{ product.priceUnit }}</text>
         </view>
-      </view>
-    </scroll-view>
+    </MiniTabScrollBody>
   </view>
 </template>

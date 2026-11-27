@@ -5,11 +5,12 @@ import { buildTrainingHistoryGroups, type TrainingRecord } from '@/shared/core'
 import { connectionSnapshot, getTrainingRepository, interactionsBlocked } from '../../app/MiniServices'
 import { navigateMini, useMiniTabPage, withMiniOperationLock } from '../../app/MiniPageSafety'
 import MiniPageHeader from '../../components/app/MiniPageHeader.vue'
+import MiniTabScrollBody from '../../components/app/MiniTabScrollBody.vue'
 import MiniUpdateSettingsCard from '../../components/app/MiniUpdateSettingsCard.vue'
 import TrainingGameHistoryCard from '../../components/history/TrainingGameHistoryCard.vue'
 
 defineOptions({ name: 'ProfilePage' })
-const viewport = useMiniTabPage('pages/profile/index')
+const { viewport, scrollStyle, fallbackPageScroll } = useMiniTabPage('pages/profile/index')
 
 const records = ref<TrainingRecord[]>([])
 const groups = computed(() => buildTrainingHistoryGroups(records.value))
@@ -61,10 +62,11 @@ function openSettings(device: boolean) {
 </script>
 
 <template>
-  <view class="mini-tab-page" :style="viewport">
-    <MiniPageHeader title="我的" />
-    <scroll-view scroll-y class="mini-tab-scroll">
-      <view class="mini-page mini-tab-content">
+  <view class="mini-tab-page" :class="{ 'mini-tab-page--fallback': fallbackPageScroll }" :style="viewport">
+    <view id="mini-tab-header" class="mini-tab-header">
+      <MiniPageHeader title="我的" />
+    </view>
+    <MiniTabScrollBody :fallback="fallbackPageScroll" :scroll-style="scrollStyle">
         <view class="mini-card">
           <text class="mini-card-title">训练设置</text>
           <text class="mini-description">当前设备 {{ connectionSnapshot.binding?.name ?? '未绑定' }}</text>
@@ -88,7 +90,6 @@ function openSettings(device: boolean) {
           <button :disabled="interactionsBlocked" @tap="openPrivacyGuide">查看微信隐私保护指引</button>
           <text v-if="privacyError" class="mini-error">{{ privacyError }}</text>
         </view>
-      </view>
-    </scroll-view>
+    </MiniTabScrollBody>
   </view>
 </template>

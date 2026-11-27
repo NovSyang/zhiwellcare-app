@@ -39,10 +39,22 @@ page {
   margin-bottom: 28px;
 }
 
-/* 仅 Tab 内容滚动，页头保持在原生导航和 Tab 栏之间。 */
-.mini-tab-page { height: 100vh; display: flex; flex-direction: column; }
-.mini-tab-scroll { height: 0; flex: 1; min-height: 0; }
-.mini-tab-content { min-height: 0; }
+/* 仅 Tab 正文滚动，页头独立于原生滚动组件。 */
+.mini-tab-page { box-sizing: border-box; height: 100vh; display: flex; flex-direction: column; }
+.mini-tab-header { flex: 0 0 auto; min-width: 0; }
+.mini-tab-scroll {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  /* 首次测量前预留 44 逻辑像素的按钮高度和页头上下内边距。 */
+  height: calc(100vh - 44PX - 56px);
+}
+.mini-page.mini-tab-content { min-height: 100%; }
+
+/* 无法取得有效尺寸时，让普通页面承载自然增长的内容。 */
+.mini-tab-page--fallback { display: block; height: auto; min-height: 100vh; }
+.mini-tab-page--fallback .mini-tab-content { min-height: 0; }
 .mini-page-header {
   position: relative;
   z-index: 10;
