@@ -56,9 +56,10 @@ export function drawRuntimeSceneOverview(
     to = Math.min(1, Math.max(max, from + 0.08))
   }
   const span = Math.max(0.001, to - from)
+  // 实时小窗以向上为前进方向，轨迹和当前位置共用同一个屏幕投影。
   const project = (x: number, y: number) => ({
     x: plotLeft + x * plotWidth,
-    y: plotTop + (y - from) / span * plotHeight,
+    y: plotTop + (to - y) / span * plotHeight,
   })
 
   ctx.fillStyle = 'rgba(10, 25, 44, 0.86)'
@@ -67,7 +68,8 @@ export function drawRuntimeSceneOverview(
   ctx.font = 'bold 10px sans-serif'
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
-  ctx.fillText(title, left + width / 2, top + 10)
+  // 标出前进方向，也便于在手机预览时识别已更新的路线小窗。
+  ctx.fillText(`${title} ↑`, left + width / 2, top + 10)
   ctx.strokeStyle = '#67869d'
   ctx.lineWidth = 1
   ctx.strokeRect(plotLeft, plotTop, plotWidth, plotHeight)

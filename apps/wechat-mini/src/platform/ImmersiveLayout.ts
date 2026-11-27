@@ -1,7 +1,7 @@
 import Taro from '@tarojs/taro'
 
-/** 读取当前窗口的安全边距和胶囊位置，控件放在胶囊下方。 */
-export function readImmersiveLayout() {
+/** 同时读取窗口、安全区和胶囊，训练页据此判断能否并排放置工具栏。 */
+export function readImmersiveGeometry() {
   const { windowWidth, windowHeight, screenWidth, screenHeight, safeArea } = Taro.getWindowInfo()
   const margin = 12
   let left = 0, right = 0, top = 0, bottom = 0
@@ -21,11 +21,23 @@ export function readImmersiveLayout() {
   const capsuleBottom = capsule && capsule.width > 0 && capsule.left > windowWidth / 2
     && capsule.right <= windowWidth + 1 && capsule.bottom > 0 && capsule.bottom < windowHeight / 3 ? capsule.bottom : 0
   return {
-    '--safe-left': `${left + margin}px`,
-    '--safe-right': `${right + margin}px`,
-    '--safe-bottom': `${bottom + margin}px`,
-    '--safe-top': `${Math.max(top, capsuleBottom) + (capsuleBottom ? 6 : margin)}px`,
+    windowWidth,
+    left: left + margin,
+    right: right + margin,
+    safeTop: top,
+    capsule: capsuleBottom ? capsule : undefined,
+    insets: {
+      '--safe-left': `${left + margin}px`,
+      '--safe-right': `${right + margin}px`,
+      '--safe-bottom': `${bottom + margin}px`,
+      '--safe-top': `${Math.max(top, capsuleBottom) + (capsuleBottom ? 6 : margin)}px`,
+    },
   }
+}
+
+/** 暂停面板与回放继续使用胶囊下方的原有安全边距。 */
+export function readImmersiveLayout() {
+  return readImmersiveGeometry().insets
 }
 
 let keepScreenTask = Promise.resolve()

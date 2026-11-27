@@ -14,7 +14,7 @@ import { isMiniTrainingGameId, miniTrainingGames, type MiniTrainingGameId } from
 import { getTrainingOffers } from '../../../app/TrainingOffers'
 import { createTrainingClock } from '../../../platform/TrainingClock'
 import { waitForCanvasSurface, type CanvasSurface } from '../../../platform/canvas/WeChatCanvasSurface'
-import { readImmersiveLayout, setTrainingScreenOn } from '../../../platform/ImmersiveLayout'
+import { readImmersiveGeometry, setTrainingScreenOn } from '../../../platform/ImmersiveLayout'
 import { formatDuration } from '../../../utils/DateTimeFormatter'
 import { createTrainingRun, type TrainingCanvasOptions } from './createTrainingRun'
 import type { TrainingPauseReason } from './MiniTrainingRun'
@@ -26,7 +26,7 @@ const gameId = ref<MiniTrainingGameId | null>(TARGET_REACH_GAME_ID)
 const game = computed(() => gameId.value ? miniTrainingGames[gameId.value] : null)
 const state = ref<TrainingSessionState>('idle')
 const elapsed = ref(0)
-const insets = ref(readImmersiveLayout())
+const layout = shallowRef(readTrainingLayout())
 const metrics = shallowRef<GameHudMetric[]>([])
 const canResume = ref(false)
 const reason = ref<TrainingPauseReason | null>(null)
@@ -40,6 +40,8 @@ const finished = shallowRef<TrainingRecord | null>(null)
 const openingResult = ref(false)
 const resultError = ref('')
 const trajectoryMode = ref<RuntimeTrajectoryMode>('tail')
+const trajectoryLabel = computed(() => trajectoryMode.value === 'tail' ? '动态尾迹' : '完整轨迹')
+const trajectoryAction = computed(() => trajectoryMode.value === 'tail' ? '动态尾迹，点击切换完整轨迹' : '完整轨迹，点击切换动态尾迹')
 const connected = computed(() => sensorSnapshot.value?.state === 'connected')
 const calibrating = computed(() => deviceState.value.calibrating)
 const pauseText: Record<TrainingPauseReason, string> = {
@@ -132,16 +134,43 @@ function applyVisibility() {
   syncRun()
 }
 
+/** 优先在胶囊左侧对齐按钮，横向空间不足时才把整条工具栏下移。 */
+function readTrainingLayout() {
+  const { windowWidth, left, right, safeTop, capsule, insets } = readImmersiveGeometry()
+  let availableWidth = windowWidth - left - right
+  let toolbar = {}
+  if (capsule && Number.isFinite(capsule.top) && capsule.top >= 0 && capsule.top < capsule.bottom && capsule.left < capsule.right) {
+    const buttonHeight = 32
+    const actionsWidth = 204 // 88 + 52 + 52，再加两处 6px 间距。
+    const capsuleRightInset = Math.max(right, windowWidth - capsule.left + 8)
+    const roomBeforeCapsule = windowWidth - left - capsuleRightInset
+    if (roomBeforeCapsule >= actionsWidth) {
+      const top = Math.max(safeTop + 4, (capsule.top + capsule.bottom - buttonHeight) / 2)
+      const stackStatus = roomBeforeCapsule < 440
+      availableWidth = roomBeforeCapsule
+      toolbar = {
+        '--training-hud-top': `${top}px`,
+        '--training-hud-right': `${stackStatus ? right : capsuleRightInset}px`,
+        '--training-hud-actions-inset': `${stackStatus ? capsuleRightInset - right : 0}px`,
+        '--training-hud-row-gap': `${Math.max(4, capsule.bottom - top - buttonHeight + 4)}px`,
+      }
+    }
+  }
+  const density = availableWidth >= 650 ? 'regular' : availableWidth >= 500 ? 'compact'
+    : availableWidth >= 440 ? 'narrow' : 'stacked'
+  return { insets, density, toolbar }
+}
+
 function resize() {
-  insets.value = readImmersiveLayout()
   if (active && !finished.value) void mountCanvas()
+  else layout.value = readTrainingLayout()
 }
 
 function canvasOptions(): TrainingCanvasOptions {
   return {
     trajectoryMode: () => trajectoryMode.value,
-    safeLeft: Number.parseFloat(insets.value['--safe-left']),
-    safeBottom: Number.parseFloat(insets.value['--safe-bottom']),
+    safeLeft: Number.parseFloat(layout.value.insets['--safe-left']),
+    safeBottom: Number.parseFloat(layout.value.insets['--safe-bottom']),
   }
 }
 
@@ -149,7 +178,7 @@ async function mountCanvas() {
   if (!active || disposed) return
   const revision = ++canvasRevision
   const isCurrent = () => active && !disposed && revision === canvasRevision && !finished.value
-  insets.value = readImmersiveLayout()
+  layout.value = readTrainingLayout()
   stopPainting()
   surface = null
   drawFrame = null
@@ -159,6 +188,8 @@ async function mountCanvas() {
     await nextTick()
     const current = await waitForCanvasSurface('#training-canvas', isCurrent, 'landscape')
     if (!current) return
+    // 横屏画布就绪后，用当前窗口的胶囊位置覆盖旋转过渡期间的读数。
+    layout.value = readTrainingLayout()
     const draw = training?.mount(current, canvasOptions())
     draw?.()
     surface = current
@@ -360,22 +391,26 @@ function errorText(failure: unknown, fallback: string) { return failure instance
 </script>
 
 <template>
-  <view class="immersive-shell" :style="insets">
+  <view class="immersive-shell" :style="layout.insets">
     <canvas v-if="game" id="training-canvas" type="2d" class="immersive-canvas" />
     <!-- 训练数据和操作悬浮在画布上，横屏后画布使用整个窗口。 -->
-    <view v-if="game && !finished && (state === 'playing' || state === 'countdown')" class="immersive-toolbar">
-      <view class="immersive-row">
-        <text class="immersive-chip">有效 {{ formatDuration(elapsed) }}</text>
-        <MiniCompactDeviceStatus />
-        <text v-for="metric in metrics" :key="metric.label" class="immersive-chip">{{ metric.label }} {{ metric.value }}</text>
+    <view v-if="game && !finished && (state === 'playing' || state === 'countdown')"
+      class="immersive-toolbar training-toolbar" :class="'training-toolbar--' + layout.density" :style="layout.toolbar">
+      <view class="immersive-row training-hud-status">
+        <view class="training-hud-primary">
+          <text class="immersive-chip">有效 {{ formatDuration(elapsed) }}</text>
+          <MiniCompactDeviceStatus />
+        </view>
+        <view v-if="metrics.length" class="training-hud-metrics">
+          <text v-for="metric in metrics" :key="metric.label" class="immersive-chip">{{ metric.label }} {{ metric.value }}</text>
+        </view>
       </view>
-      <view class="immersive-row">
-        <button v-if="state === 'playing'" size="mini" class="immersive-button immersive-trajectory-toggle"
-          :class="{ 'immersive-primary': trajectoryMode === 'full' }"
-          :aria-label="trajectoryMode === 'tail' ? '动态尾迹，点击切换完整轨迹' : '完整轨迹，点击切换动态尾迹'"
-          @tap="toggleTrajectory">{{ trajectoryMode === 'tail' ? '动态尾迹' : '完整轨迹' }}</button>
-        <button size="mini" class="immersive-button" @tap="pause">暂停</button>
-        <button size="mini" class="immersive-button" @tap="exitTraining">结束</button>
+      <view class="immersive-row training-hud-actions">
+        <button v-if="state === 'playing'" class="training-action training-action--trajectory"
+          :class="{ 'training-action--selected': trajectoryMode === 'full' }" :aria-label="trajectoryAction"
+          @tap="toggleTrajectory"><text class="training-action-label">{{ trajectoryLabel }}</text></button>
+        <button class="training-action" @tap="pause"><text class="training-action-label">暂停</text></button>
+        <button class="training-action" @tap="exitTraining"><text class="training-action-label">结束</text></button>
       </view>
     </view>
     <view v-else class="immersive-overlay">
@@ -405,9 +440,9 @@ function errorText(failure: unknown, fallback: string) { return failure instance
             <template v-if="game">
               <button v-if="state === 'idle'" size="mini" class="immersive-button immersive-primary" :disabled="busy || !canvasReady || !readyForTraining || deviceBusy || interactionsBlocked" @tap="begin">开始训练</button>
               <button v-else-if="state === 'paused'" size="mini" class="immersive-button immersive-primary" :disabled="!canvasReady || !canResume || deviceBusy || interactionsBlocked" @tap="resume">继续训练</button>
-              <button v-if="state === 'paused'" size="mini" class="immersive-button immersive-trajectory-toggle"
-                :class="{ 'immersive-primary': trajectoryMode === 'full' }" :disabled="!canvasReady"
-                @tap="toggleTrajectory">{{ trajectoryMode === 'tail' ? '动态尾迹' : '完整轨迹' }}</button>
+              <button v-if="state === 'paused'" class="training-action training-action--trajectory"
+                :class="{ 'training-action--selected': trajectoryMode === 'full' }" :disabled="!canvasReady"
+                :aria-label="trajectoryAction" @tap="toggleTrajectory"><text class="training-action-label">{{ trajectoryLabel }}</text></button>
               <button v-if="!canvasReady && error" size="mini" class="immersive-button" @tap="mountCanvas">重试画布</button>
               <button v-if="!connected && connectionSnapshot.binding" size="mini" class="immersive-button" :disabled="busy || deviceBusy || interactionsBlocked" @tap="reconnect">重连设备</button>
               <button v-else-if="connected && !readyForTraining" size="mini" class="immersive-button" :disabled="deviceBusy || busy || interactionsBlocked" @tap="calibrate">
@@ -424,6 +459,84 @@ function errorText(failure: unknown, fallback: string) { return failure instance
 </template>
 
 <style>
-/* 轨迹切换使用独立触区，沿用暂停和结束所在的安全区操作栏。 */
-.immersive-shell button.immersive-trajectory-toggle { min-height: 44PX; white-space: nowrap; }
+/* 操作组优先占据顶部右侧，只有状态和指标可以分行。 */
+.immersive-toolbar.training-toolbar {
+  top: var(--training-hud-top, var(--safe-top, 12px));
+  right: var(--training-hud-right, var(--safe-right, 12px));
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 6PX;
+}
+.training-toolbar .training-hud-status {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 32PX;
+  gap: 4PX;
+}
+.training-toolbar .training-hud-primary,
+.training-toolbar .training-hud-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  max-width: 100%;
+  gap: 4PX;
+}
+.training-toolbar .training-hud-primary { min-height: 32PX; }
+.training-toolbar .immersive-chip {
+  flex: 0 0 auto;
+  padding: 5PX 7PX;
+  font-size: 13PX;
+  white-space: nowrap;
+}
+.training-toolbar .training-hud-actions {
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6PX;
+}
+
+/* 窄屏降低状态区密度，时间、连接、电量及训练指标仍可完整显示。 */
+.training-toolbar--compact .immersive-chip,
+.training-toolbar--narrow .immersive-chip,
+.training-toolbar--stacked .immersive-chip {
+  padding: 4PX 6PX;
+  font-size: 12PX;
+}
+.training-toolbar--narrow .training-hud-metrics { flex-basis: 100%; }
+.immersive-toolbar.training-toolbar--stacked { flex-direction: column; gap: var(--training-hud-row-gap, 4px); }
+.training-toolbar--stacked .training-hud-actions {
+  order: -1;
+  align-self: flex-end;
+  margin-right: var(--training-hud-actions-inset, 0px);
+}
+.training-toolbar--stacked .training-hud-status { flex: 0 1 auto; width: 100%; min-height: 0; }
+.training-toolbar--stacked .training-hud-primary { min-height: 0; }
+
+/* 三个操作使用独立尺寸，避开原生 mini 按钮的默认行高和内边距。 */
+.immersive-shell button.training-action {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 52PX;
+  height: 32PX;
+  min-height: 32PX;
+  margin: 0;
+  padding: 0;
+  border: 1PX solid #6983ac;
+  border-radius: 8PX;
+  background: rgba(8, 22, 48, 0.90);
+  color: #fff;
+  font-size: 13PX;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: auto;
+}
+.immersive-shell button.training-action::after { border: 0; }
+.immersive-shell button.training-action--trajectory { width: 88PX; }
+.immersive-shell button.training-action--selected { background: #1647b2; border-color: #6e98ee; }
+.training-action-label { display: block; line-height: 1; text-align: center; }
 </style>

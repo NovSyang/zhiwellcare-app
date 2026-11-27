@@ -121,6 +121,24 @@ for (const [route, orientation, navigationStyle] of immersiveRoutes) {
   if (navigationStyle) assert.equal(config.navigationStyle, navigationStyle, route)
   if (orientation === 'landscape') assert.equal(config.disableScroll, true, route)
 }
+
+// 校验实际生成的训练页，避免把旧工具栏产物重新拿去扫码预览。
+const trainingPage = join(output, 'features/training/session/index')
+const trainingJs = readFileSync(`${trainingPage}.js`, 'utf8')
+const trainingStyles = [...readFileSync(`${trainingPage}.wxss`, 'utf8').matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+assert.ok(trainingJs.includes('--training-hud-top') && trainingJs.includes('training-action--trajectory'), '训练页缺少胶囊同排工具栏')
+assert.match(trainingJs, / (?:↑|\\u2191)/i, '实时路线小窗缺少向上指示')
+function assertTrainingStyle(selector, declaration) {
+  const matches = trainingStyles.filter(([, selectors]) => selectors.split(',').some((item) => item.trim().endsWith(selector)))
+  assert.ok(matches.some(([, , body]) => body.split(';').some((item) => declaration.test(item.trim()))), `训练页缺少样式 ${selector} ${declaration}`)
+}
+assertTrainingStyle('.training-hud-actions', /^flex-wrap:\s*nowrap$/)
+assertTrainingStyle('button.training-action', /^width:\s*52px$/i)
+assertTrainingStyle('button.training-action', /^height:\s*32px$/i)
+assertTrainingStyle('button.training-action', /^align-items:\s*center$/)
+assertTrainingStyle('button.training-action', /^justify-content:\s*center$/)
+assertTrainingStyle('button.training-action--trajectory', /^width:\s*88px$/i)
+
 for (const route of routes) {
   for (const extension of ['js', 'json', 'wxml']) {
     assert.ok(statSync(join(output, `${route}.${extension}`)).size > 0, `缺少 ${route}.${extension}`)
