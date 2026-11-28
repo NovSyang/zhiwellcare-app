@@ -28,3 +28,26 @@ export function drawSceneLabel(ctx: CanvasRenderingContext2D, label: string, wid
   ctx.fillStyle = '#ffffff'
   ctx.fillText(label, width / 2, y)
 }
+
+/** 横屏训练开场时，在画布正中绘制大号倒计时，小窗口按短边缩放。 */
+export function drawSceneCountdown(ctx: CanvasRenderingContext2D, seconds: number, width: number, height: number): void {
+  const x = width / 2
+  const y = height / 2
+  // 底板、数字和边框共用 70% 缩放比例，中心位置不变。
+  const scale = 0.7
+  const radius = Math.min(68, Math.min(width, height) * 0.22) * scale
+  ctx.save()
+  ctx.beginPath()
+  ctx.arc(x, y, radius, 0, Math.PI * 2)
+  ctx.fillStyle = 'rgba(8, 22, 48, 0.90)'
+  ctx.fill()
+  ctx.strokeStyle = '#9ed5ff'
+  ctx.lineWidth = 2 * scale
+  ctx.stroke()
+  ctx.font = `bold ${Math.round(radius * 1.05)}px sans-serif`
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = '#ffffff'
+  ctx.fillText(String(seconds), x, y)
+  ctx.restore()
+}

@@ -2,7 +2,7 @@ import {
   createKartRacingViewport, projectKartEntity,
   type KartRacingGameConfig, type KartTrackSegment,
 } from '@/shared/kart'
-import { drawSceneLabel, fillCircle, fillPolygon } from './SceneCanvas'
+import { drawSceneCountdown, drawSceneLabel, fillCircle, fillPolygon } from './SceneCanvas'
 import { prepareCanvas, type CanvasSurface } from './WeChatCanvasSurface'
 
 interface RoadObject { distance: number; lateral: number; radius: number; active: boolean }
@@ -14,6 +14,7 @@ interface KartScene {
   kart: { lateral: number; distance: number }
   shieldActive: boolean
   boostActive: boolean
+  countdown?: number
   label?: string
 }
 
@@ -116,7 +117,9 @@ export class KartRacingCanvas {
       ctx.lineWidth = 2
       ctx.stroke()
     }
-    if (scene.label) drawSceneLabel(ctx, scene.label, width)
+    // 开场倒计时盖在场景上方，暂停和回放提示沿用顶部标签。
+    if (scene.countdown !== undefined) drawSceneCountdown(ctx, scene.countdown, width, height)
+    else if (scene.label) drawSceneLabel(ctx, scene.label, width)
   }
 
   private roadBand(far: ReturnType<typeof projectKartEntity>, near: ReturnType<typeof projectKartEntity>, band: number): void {

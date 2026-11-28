@@ -1,4 +1,4 @@
-import type { GameHudMetric, GameResultPresentation } from '@/shared/core'
+import type { GameHudMetric, GameResultPresentation, TrainingSessionSnapshot } from '@/shared/core'
 import { TARGET_REACH_GAME_ID, defaultTargetReachGameConfig } from '@/shared/target-config'
 import { presentTargetReachResult } from '@/shared/target-result'
 import {
@@ -128,7 +128,7 @@ function createRiverRun(options: TrainingRunOptions) {
       return () => {
         const frame = run.getFrame()
         const { session } = frame
-        canvas.draw({ ...frame, label: sceneLabel(session) }, (ctx) => paint(ctx, session.playingElapsedMs))
+        canvas.draw({ ...frame, ...sceneOverlay(session) }, (ctx) => paint(ctx, session.playingElapsedMs))
       }
     },
     present: (): GameResultPresentation | null => {
@@ -164,7 +164,7 @@ function createKartRun(options: TrainingRunOptions) {
       return () => {
         const frame = run.getFrame()
         const { session } = frame
-        canvas.draw({ ...frame, label: sceneLabel(session) }, (ctx) => paint(ctx, session.playingElapsedMs))
+        canvas.draw({ ...frame, ...sceneOverlay(session) }, (ctx) => paint(ctx, session.playingElapsedMs))
       }
     },
     present: (): GameResultPresentation | null => {
@@ -189,8 +189,8 @@ function createScenePainter(
   })
 }
 
-/** 倒计时和暂停文案由公共训练状态提供。 */
-function sceneLabel(session: { state: string; countdownRemainingMs: number }): string | undefined {
-  if (session.state === 'countdown') return String(Math.max(1, Math.ceil(session.countdownRemainingMs / 1000)))
-  return session.state === 'paused' ? '训练已暂停' : undefined
+/** 倒计时继续读取会话剩余时间，只把数字与顶部提示分别送给画布。 */
+function sceneOverlay(session: TrainingSessionSnapshot): { countdown?: number; label?: string } {
+  if (session.state === 'countdown') return { countdown: Math.max(1, Math.ceil(session.countdownRemainingMs / 1000)) }
+  return { label: session.state === 'paused' ? '训练已暂停' : undefined }
 }

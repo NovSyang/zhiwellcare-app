@@ -2,7 +2,7 @@ import {
   createRiverDriftViewport, riverDriftBoatScale, riverDriftCenterAt, riverDriftPerspectiveScale,
   type RiverDriftGameConfig, type RiverDriftPoint, type RiverDriftSegment,
 } from '@/shared/river'
-import { drawSceneLabel, fillCircle, fillPolygon } from './SceneCanvas'
+import { drawSceneCountdown, drawSceneLabel, fillCircle, fillPolygon } from './SceneCanvas'
 import { prepareCanvas, type CanvasSurface } from './WeChatCanvasSurface'
 
 interface RiverScene {
@@ -11,6 +11,7 @@ interface RiverScene {
   obstacles: readonly (RiverDriftPoint & { radius: number; active: boolean; obstacleType: string; hit: boolean })[]
   boat: RiverDriftPoint
   worldDistance: number
+  countdown?: number
   label?: string
 }
 
@@ -102,6 +103,8 @@ export class RiverDriftCanvas {
       { x: x - r * 0.67, y: y + r }, { x: x - r, y },
     ], '#ff9662')
     fillCircle(ctx, x, y, r * 0.51, '#fff4d5')
-    if (scene.label) drawSceneLabel(ctx, scene.label, width)
+    // 开场倒计时盖在场景上方，暂停和回放提示沿用顶部标签。
+    if (scene.countdown !== undefined) drawSceneCountdown(ctx, scene.countdown, width, height)
+    else if (scene.label) drawSceneLabel(ctx, scene.label, width)
   }
 }
